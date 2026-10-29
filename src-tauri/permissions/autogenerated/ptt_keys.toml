@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ptt-keys"
+description = "Enables the ptt_keys command without any pre-configured scope."
+commands.allow = ["ptt_keys"]
+
+[[permission]]
+identifier = "deny-ptt-keys"
+description = "Denies the ptt_keys command without any pre-configured scope."
+commands.deny = ["ptt_keys"]
