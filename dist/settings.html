@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Paramètres Plume</title>
+<style>
+  :root {
+    --bg: #1a1a1e; --panel: #232328; --panel-2: #2b2b31; --line: #34343b;
+    --text: #ececf1; --muted: #9a9aa6; --accent: #8b7cf6; --accent-2: #6b5ce0;
+    --ok: #3ba55c; --warn: #f0b232; --bad: #da373c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  body { padding: 20px 22px 28px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  header svg { flex: none; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 650; display: flex; justify-content: space-between; align-items: center; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row .t { font-weight: 550; }
+  .row .d { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+  .live { background: #3ba55c26; color: #6fd394; }
+  .next { background: #f0b23226; color: #f5c96a; }
+  /* interrupteur */
+  .sw { position: relative; width: 40px; height: 24px; flex: none; }
+  .sw input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .sw span { position: absolute; inset: 0; background: #4e4e58; border-radius: 99px; transition: background .15s; cursor: pointer; }
+  .sw span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw input:checked + span { background: var(--accent); }
+  .sw input:checked + span::after { transform: translateX(16px); }
+  .sw input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* boutons segmentés */
+  .seg { display: inline-flex; background: var(--panel-2); border-radius: 8px; padding: 3px; gap: 2px; flex: none; }
+  .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 9px; white-space: nowrap; border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .presets button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 9px 6px; font: inherit; cursor: pointer; text-align: center; }
+  .presets button b { display: block; font-size: 13.5px; }
+  .presets button small { color: var(--muted); font-size: 11.5px; }
+  .presets button[aria-pressed="true"] { border-color: var(--accent); background: #8b7cf61f; }
+  .slider { display: flex; align-items: center; gap: 12px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .val { font-variant-numeric: tabular-nums; min-width: 86px; text-align: right; font-weight: 600; }
+  .warn { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: #f0b2321a; color: #f5c96a; font-size: 12.5px; display: none; }
+  .warn.on { display: block; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat { background: var(--panel-2); border-radius: 8px; padding: 9px 11px; }
+  .stat .k { color: var(--muted); font-size: 11.5px; }
+  .stat .v { font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; margin-top: 2px; word-break: break-word; }
+  .stat.wide { grid-column: span 2; }
+  .stat .v.small { font-size: 12px; font-weight: 500; font-family: Consolas, monospace; }
+  .good { color: #6fd394; } .bad { color: #f2777a; }
+  .btn { border: 0; background: var(--accent); color: #fff; padding: 8px 14px; border-radius: 7px; font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: var(--accent-2); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(20px); background: #2f2f36; border: 1px solid var(--line); padding: 7px 14px; border-radius: 99px; font-size: 12.5px; opacity: 0; transition: .2s; pointer-events: none; }
+  #toast.on { opacity: 1; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<header>
+  <svg width="40" height="40" viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7cf6"/><stop offset="1" stop-color="#4c3fb8"/></linearGradient></defs><rect x="32" y="32" width="960" height="960" rx="224" fill="url(#g)"/><path d="M742 236c-148 18-286 112-354 260-38 82-54 170-56 256l-60 92 34 22 58-88c84-6 170-30 244-80 140-94 196-272 134-462z" fill="#fff"/><path d="M700 300 392 752" stroke="url(#g)" stroke-width="28" stroke-linecap="round"/></svg>
+  <div>
+    <h1>Paramètres Plume</h1>
+    <p>Chaque changement est enregistré tout de suite.</p>
+  </div>
+</header>
+
+<section>
+  <h2>Qualité du micro</h2>
+  <div class="presets" id="presets">
+    <button data-p="voix"><b>Voix</b><small>96 kb/s</small></button>
+    <button data-p="haute"><b>Haute</b><small>192 kb/s</small></button>
+    <button data-p="studio"><b>Studio</b><small>320 kb/s</small></button>
+    <button data-p="max"><b>Maximum</b><small>510 kb/s</small></button>
+  </div>
+  <div class="row">
+    <div><div class="t">Débit Opus <span class="tag live">en direct</span></div><div class="d">Jusqu'à 510 kb/s, le maximum d'Opus.</div></div>
+  </div>
+  <div class="slider">
+    <input type="range" id="bitrate" min="32" max="510" step="2" aria-label="Débit en kb/s">
+    <span class="val" id="bitrateVal"></span>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <div><div class="t">Stéréo <span class="tag next">prochain appel</span></div><div class="d">Deux canaux de bout en bout.</div></div>
+    <label class="sw"><input type="checkbox" data-k="stereo"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Taille de trame <span class="tag next">prochain appel</span></div><div class="d">Petite = moins de latence. Grande = meilleur rendement.</div></div>
+    <div class="seg" id="frame">
+      <button data-v="10">10 ms</button><button data-v="20">20 ms</button><button data-v="40">40 ms</button><button data-v="60">60 ms</button>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Encodage</h2>
+  <div class="row">
+    <div><div class="t">Débit constant (CBR) <span class="tag next">prochain appel</span></div><div class="d">Le débit ne baisse pas sur les passages simples. Idéal pour la musique.</div></div>
+    <label class="sw"><input type="checkbox" data-k="cbr"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Correction d'erreurs (FEC) <span class="tag next">prochain appel</span></div><div class="d">Résiste mieux aux pertes réseau, au prix d'une partie du débit.</div></div>
+    <label class="sw"><input type="checkbox" data-k="fec"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Silences allégés (DTX) <span class="tag next">prochain appel</span></div><div class="d">N'envoie presque rien quand tu te tais. Coupe les fins de notes : à éviter pour la musique.</div></div>
+    <label class="sw"><input type="checkbox" data-k="dtx"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Priorité réseau haute <span class="tag live">en direct</span></div><div class="d">L'audio passe avant le reste quand la connexion sature.</div></div>
+    <label class="sw"><input type="checkbox" data-k="highPriority"><span></span></label>
+  </div>
+</section>
+
+<section>
+  <h2>Traitements du micro</h2>
+  <div class="row">
+    <div><div class="t">Annulation d'écho <span class="tag live">en direct</span></div><div class="d">Utile sans casque. Remixe en mono.</div></div>
+    <label class="sw"><input type="checkbox" data-k="echoCancellation"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Suppression de bruit <span class="tag live">en direct</span></div><div class="d">Retire le souffle et les bruits de fond. Abîme la musique.</div></div>
+    <label class="sw"><input type="checkbox" data-k="noiseSuppression"><span></span></label>
+  </div>
+  <div class="row">
+    <div><div class="t">Gain automatique <span class="tag live">en direct</span></div><div class="d">Égalise le volume. Écrase la dynamique.</div></div>
+    <label class="sw"><input type="checkbox" data-k="autoGainControl"><span></span></label>
+  </div>
+  <div class="warn" id="monoWarn">Un traitement actif repasse le micro en mono : la stéréo n'aura pas d'effet.</div>
+  <div class="warn on" style="display:block;background:#8b7cf61a;color:#c4baff">Pour la qualité maximale, coupe aussi la suppression de bruit et l'annulation d'écho dans Discord (Paramètres → Voix et vidéo), et utilise un casque.</div>
+</section>
+
+<section>
+  <h2>Diagnostic <button class="btn" id="test">Lancer l'auto-test</button></h2>
+  <div class="stats" id="live"></div>
+  <p class="muted" id="liveNote">Rejoins un salon vocal pour voir ce qui part réellement.</p>
+  <div class="stats" id="testOut" style="margin-top:10px"></div>
+</section>
+
+<section>
+  <h2>Mod client</h2>
+  <div class="row">
+    <div><div class="t">Mod chargé</div><div class="d">Discord se recharge quand tu en changes.</div></div>
+    <div class="seg" id="mod">
+      <button data-v="nightcord">Nightcord</button><button data-v="equicord">Equicord</button><button data-v="none">Aucun</button>
+    </div>
+  </div>
+</section>
+
+<div id="toast">Enregistré</div>
+
+<script>
+const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+const PRESETS = {
+  voix:   { bitrate: 96000,  stereo: false, frameMs: 20, cbr: false, fec: true,  dtx: false },
+  haute:  { bitrate: 192000, stereo: true,  frameMs: 20, cbr: false, fec: true,  dtx: false },
+  studio: { bitrate: 320000, stereo: true,  frameMs: 20, cbr: true,  fec: false, dtx: false },
+  max:    { bitrate: 510000, stereo: true,  frameMs: 20, cbr: true,  fec: false, dtx: false },
+};
+let cfg, saveTimer, toastTimer;
+// Une seule demande à la fois vers Discord : le diagnostic se met en pause
+// pendant l'auto-test.
+let busy = false;
+
+const $ = s => document.querySelector(s);
+const kbps = b => `${Math.round(b / 1000)} kb/s`;
+
+function render() {
+  const a = cfg.audio;
+  $("#bitrate").value = a.bitrate / 1000;
+  $("#bitrateVal").textContent = kbps(a.bitrate);
+  document.querySelectorAll("[data-k]").forEach(i => (i.checked = !!a[i.dataset.k]));
+  document.querySelectorAll("#frame button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === a.frameMs));
+  document.querySelectorAll("#mod button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === cfg.mod));
+  document.querySelectorAll("#presets button").forEach(b => {
+    const p = PRESETS[b.dataset.p];
+    b.setAttribute("aria-pressed", Object.entries(p).every(([k, v]) => a[k] === v));
+  });
+  $("#monoWarn").classList.toggle("on", a.stereo && (a.echoCancellation || a.noiseSuppression || a.autoGainControl));
+}
+
+function save(delay = 250) {
+  render();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    await invoke("set_config", { config: cfg });
+    $("#toast").classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $("#toast").classList.remove("on"), 1200);
+  }, delay);
+}
+
+$("#bitrate").addEventListener("input", e => { cfg.audio.bitrate = +e.target.value * 1000; save(400); });
+document.querySelectorAll("[data-k]").forEach(i => i.addEventListener("change", () => { cfg.audio[i.dataset.k] = i.checked; save(); }));
+document.querySelectorAll("#frame button").forEach(b => b.addEventListener("click", () => { cfg.audio.frameMs = +b.dataset.v; save(); }));
+document.querySelectorAll("#presets button").forEach(b => b.addEventListener("click", () => {
+  Object.assign(cfg.audio, PRESETS[b.dataset.p], { echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  save(0);
+}));
+document.querySelectorAll("#mod button").forEach(b => b.addEventListener("click", () => {
+  if (cfg.mod === b.dataset.v) return;
+  cfg.mod = b.dataset.v;
+  save(0);
+}));
+
+function stat(k, v, cls = "", wide = false, small = false) {
+  return `<div class="stat${wide ? " wide" : ""}"><div class="k">${k}</div><div class="v${small ? " small" : ""} ${cls}">${v ?? "—"}</div></div>`;
+}
+const esc = s => String(s ?? "—").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+
+async function poll() {
+  if (busy) return;
+  busy = true;
+  try {
+    const list = await invoke("audio_probe", { kind: "status" });
+    const s = Array.isArray(list) ? list[0] : null;
+    if (!s) { $("#live").innerHTML = ""; $("#liveNote").style.display = ""; return; }
+    $("#liveNote").style.display = "none";
+    $("#live").innerHTML =
+      stat("Stéréo", s.stereo ? "Oui" : "Non", s.stereo ? "good" : "bad") +
+      stat("Canaux du micro", s.canauxMicro) +
+      stat("Débit réel", s.debitReel ? kbps(s.debitReel) : "—") +
+      stat("Débit cible", s.debitCible ? kbps(s.debitCible) : "—") +
+      stat("Paquets / s", s.paquetsParSeconde) +
+      stat("Traitements", [s.echoCancellation && "écho", s.noiseSuppression && "bruit", s.autoGainControl && "gain"].filter(Boolean).join(", ") || "aucun") +
+      stat("Ligne Opus négociée", esc(s.fmtp), "", true, true);
+  } catch { /* Discord en cours de chargement */ }
+  finally { busy = false; }
+}
+
+$("#test").addEventListener("click", async () => {
+  const btn = $("#test");
+  while (busy) await new Promise(r => setTimeout(r, 100));
+  busy = true;
+  btn.disabled = true; btn.textContent = "Test en cours…";
+  try {
+    const r = await invoke("audio_probe", { kind: "test" });
+    $("#testOut").innerHTML = r.erreur ? stat("Erreur", esc(r.erreur), "bad", true) :
+      stat("Résultat", r.stereo ? "Stéréo conservée" : "Mono", r.stereo ? "good" : "bad") +
+      stat("Gauche / droite", `${r.gauche} / ${r.droite}`) +
+      stat("Débit mesuré", kbps(r.debitReel)) +
+      stat("Trame mesurée", r.trameMs ? `${r.trameMs} ms` : "—") +
+      stat("Ligne Opus", esc(r.fmtp), "", true, true);
+  } catch (e) {
+    $("#testOut").innerHTML = stat("Erreur", esc(e), "bad", true);
+  }
+  busy = false;
+  btn.disabled = false; btn.textContent = "Lancer l'auto-test";
+});
+
+(async () => {
+  cfg = await invoke("get_config");
+  render();
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>

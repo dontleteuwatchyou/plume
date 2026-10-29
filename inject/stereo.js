@@ -1,42 +1,64 @@
-// Stéréo micro pour Discord web.
+// Audio micro de Discord web, réglable depuis Paramètres Plume.
 //
 // Le client web passe par le WebRTC du navigateur : pas de discord_voice.node à
-// patcher. Pour que l'Opus parte en stéréo il faut trois choses :
-//   1. une piste micro à 2 canaux, sans les traitements qui la remixent en mono
-//      (annulation d'écho, suppression de bruit, gain auto) ;
-//   2. stereo=1 dans la négociation SDP : c'est le récepteur qui le demande,
-//      donc on le met dans les deux descriptions, locale et distante ;
-//   3. un débit à la hauteur (maxaveragebitrate + maxBitrate de l'émetteur).
+// patcher. Ce qu'on contrôle :
+//   1. la capture : 2 canaux, et chaque traitement (annulation d'écho,
+//      suppression de bruit, gain auto) activé ou non. Les trois remixent en
+//      mono : pour la stéréo, il faut les couper ;
+//   2. la négociation SDP de la ligne Opus : stereo, débit, CBR, FEC, DTX,
+//      taille de trame. Ces paramètres sont fixés par le récepteur, donc on
+//      les écrit dans les descriptions locale ET distante ;
+//   3. l'émetteur : débit maximal et priorité réseau.
 //
-// Diagnostic dans la console : plumeStereo.status(), plumeStereo.selfTest().
+// Les traitements du micro, le débit et la priorité s'appliquent en direct
+// (__plumeApply) ; le reste à la prochaine connexion vocale.
+// Console : plumeStereo.status(), plumeStereo.selfTest().
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
-    const cfg = window.__PLUME__ || {};
-    const enabled = cfg.stereo !== false;
-    const BITRATE = cfg.bitrate || 510000;
-    const log = (...a) => console.log("%c[Plume stéréo]", "color:#8b7cf6;font-weight:bold", ...a);
+    const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+    const log = (...a) => console.log("%c[Plume audio]", "color:#8b7cf6;font-weight:bold", ...a);
+
+    let A = { ...(window.__PLUME__?.audio || {}) };
+    // __PLUME__ date de la création de la fenêtre : on relit la version à jour.
+    invoke("audio_config").then(c => (A = c)).catch(() => {});
 
     // ---- 2. SDP ----------------------------------------------------------
-    const OPUS = { stereo: "1", "sprop-stereo": "1", maxaveragebitrate: String(BITRATE), usedtx: "0" };
+    function opusParams() {
+        const p = {
+            maxaveragebitrate: String(A.bitrate),
+            maxplaybackrate: "48000",
+            "sprop-maxcapturerate": "48000",
+            cbr: A.cbr ? "1" : "0",
+            useinbandfec: A.fec ? "1" : "0",
+            usedtx: A.dtx ? "1" : "0",
+            minptime: String(Math.min(10, A.frameMs)),
+        };
+        if (A.stereo) Object.assign(p, { stereo: "1", "sprop-stereo": "1" });
+        return p;
+    }
 
     function mungeSdp(sdp) {
         if (typeof sdp !== "string") return sdp;
+        const nl = sdp.includes("\r\n") ? "\r\n" : "\n";
         const pts = [...sdp.matchAll(/a=rtpmap:(\d+) opus\/48000\/2/gi)].map(m => m[1]);
+        const want = opusParams();
         for (const pt of pts) {
             const fmtp = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
-            if (fmtp.test(sdp)) {
-                sdp = sdp.replace(fmtp, (_, line) => {
-                    const params = new Map(line.split(";").map(p => p.trim()).filter(Boolean).map(p => {
-                        const i = p.indexOf("=");
-                        return i < 0 ? [p, ""] : [p.slice(0, i), p.slice(i + 1)];
-                    }));
-                    for (const [k, v] of Object.entries(OPUS)) params.set(k, v);
-                    return `a=fmtp:${pt} ${[...params].map(([k, v]) => (v === "" ? k : `${k}=${v}`)).join(";")}`;
-                });
-            } else {
-                const params = Object.entries(OPUS).map(([k, v]) => `${k}=${v}`).join(";");
-                sdp = sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2[^\\r\\n]*)(\\r?\\n)`, "i"), `$1$2a=fmtp:${pt} ${params}$2`);
+            const params = new Map();
+            const m = fmtp.exec(sdp);
+            if (m) for (const kv of m[1].split(";").map(s => s.trim()).filter(Boolean)) {
+                const i = kv.indexOf("=");
+                params.set(i < 0 ? kv : kv.slice(0, i), i < 0 ? "" : kv.slice(i + 1));
             }
+            if (!A.stereo) { params.delete("stereo"); params.delete("sprop-stereo"); }
+            for (const [k, v] of Object.entries(want)) params.set(k, v);
+            const line = `a=fmtp:${pt} ${[...params].map(([k, v]) => (v === "" ? k : `${k}=${v}`)).join(";")}`;
+            sdp = m ? sdp.replace(fmtp, line) : sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2[^\\r\\n]*)`, "i"), `$1${nl}${line}`);
+        }
+        // Taille de trame : a=ptime / a=maxptime de chaque section audio.
+        if (pts.length) {
+            sdp = sdp.replace(/^a=(max)?ptime:\d+\r?\n/gm, "");
+            sdp = sdp.replace(/(m=audio [^\r\n]*\r?\n)/g, `$1a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`);
         }
         return sdp;
     }
@@ -44,113 +66,146 @@
     // ---- 1. Micro ----------------------------------------------------------
     const PROCESSING = ["echoCancellation", "noiseSuppression", "autoGainControl"];
 
-    function stereoAudio(audio) {
+    function micConstraints(audio) {
         const a = typeof audio === "object" && audio ? { ...audio } : {};
         // Anciennes contraintes Chrome (googEchoCancellation…) : on les retire.
         for (const k of Object.keys(a)) if (k.startsWith("goog")) delete a[k];
         if (a.mandatory) a.mandatory = Object.fromEntries(Object.entries(a.mandatory).filter(([k]) => !k.startsWith("goog")));
         if (Array.isArray(a.optional)) a.optional = a.optional.filter(o => !Object.keys(o).some(k => k.startsWith("goog")));
         if (Array.isArray(a.advanced)) a.advanced = a.advanced.map(o => Object.fromEntries(Object.entries(o).filter(([k]) => !PROCESSING.includes(k) && k !== "channelCount")));
-        a.channelCount = { ideal: 2 };
-        for (const k of PROCESSING) a[k] = false;
+        if (A.stereo) a.channelCount = { ideal: 2 };
+        a.sampleRate = { ideal: 48000 };
+        for (const k of PROCESSING) a[k] = !!A[k];
         return a;
     }
 
     const peers = new Set();
+    const mics = new Set();
 
-    if (enabled) {
-        const md = navigator.mediaDevices;
-        const getUserMedia = md.getUserMedia.bind(md);
-        md.getUserMedia = function (constraints) {
-            if (constraints?.audio) constraints = { ...constraints, audio: stereoAudio(constraints.audio) };
-            return getUserMedia(constraints);
+    const md = navigator.mediaDevices;
+    const getUserMedia = md.getUserMedia.bind(md);
+    md.getUserMedia = async function (constraints) {
+        if (constraints?.audio) constraints = { ...constraints, audio: micConstraints(constraints.audio) };
+        const stream = await getUserMedia(constraints);
+        stream.getAudioTracks().forEach(t => mics.add(t));
+        return stream;
+    };
+
+    const P = RTCPeerConnection.prototype;
+    for (const name of ["createOffer", "createAnswer"]) {
+        const orig = P[name];
+        P[name] = async function (...args) {
+            const desc = await orig.apply(this, args);
+            return desc?.sdp ? new RTCSessionDescription({ type: desc.type, sdp: mungeSdp(desc.sdp) }) : desc;
         };
-
-        const P = RTCPeerConnection.prototype;
-        for (const name of ["createOffer", "createAnswer"]) {
-            const orig = P[name];
-            P[name] = async function (...args) {
-                const desc = await orig.apply(this, args);
-                return desc?.sdp ? new RTCSessionDescription({ type: desc.type, sdp: mungeSdp(desc.sdp) }) : desc;
-            };
-        }
-        for (const name of ["setLocalDescription", "setRemoteDescription"]) {
-            const orig = P[name];
-            P[name] = function (desc, ...rest) {
-                peers.add(this);
-                if (desc?.sdp) desc = { type: desc.type, sdp: mungeSdp(desc.sdp) };
-                return orig.call(this, desc, ...rest);
-            };
-        }
-
-        // ---- 3. Débit côté émetteur -------------------------------------------
-        const setParameters = RTCRtpSender.prototype.setParameters;
-        RTCRtpSender.prototype.setParameters = function (params, ...rest) {
-            if (this.track?.kind === "audio" && params?.encodings?.length) {
-                for (const e of params.encodings) e.maxBitrate = Math.max(e.maxBitrate || 0, BITRATE);
-            }
-            return setParameters.call(this, params, ...rest);
+    }
+    for (const name of ["setLocalDescription", "setRemoteDescription"]) {
+        const orig = P[name];
+        P[name] = function (desc, ...rest) {
+            peers.add(this);
+            if (desc?.sdp) desc = { type: desc.type, sdp: mungeSdp(desc.sdp) };
+            return orig.call(this, desc, ...rest);
         };
-
-        log(`actif, ${BITRATE / 1000} kb/s`);
     }
 
-    // ---- Diagnostic --------------------------------------------------------
-    async function status() {
+    // ---- 3. Émetteur -------------------------------------------------------
+    function tuneEncodings(params) {
+        for (const e of params.encodings || []) {
+            e.maxBitrate = A.bitrate;
+            if (A.highPriority) { e.priority = "high"; e.networkPriority = "high"; }
+        }
+        return params;
+    }
+    const setParameters = RTCRtpSender.prototype.setParameters;
+    RTCRtpSender.prototype.setParameters = function (params, ...rest) {
+        if (this.track?.kind === "audio" && params?.encodings?.length) tuneEncodings(params);
+        return setParameters.call(this, params, ...rest);
+    };
+
+    function audioSenders() {
         const out = [];
         for (const pc of peers) {
             if (pc.connectionState === "closed") { peers.delete(pc); continue; }
+            for (const s of pc.getSenders()) if (s.track?.kind === "audio") out.push([pc, s]);
+        }
+        return out;
+    }
+
+    // Réglages modifiés dans Paramètres Plume, appliqués sans recharger.
+    window.__plumeApply = async next => {
+        A = { ...next };
+        for (const t of mics) {
+            if (t.readyState === "ended") { mics.delete(t); continue; }
+            await t.applyConstraints(Object.fromEntries(PROCESSING.map(k => [k, !!A[k]]))).catch(() => {});
+        }
+        for (const [, s] of audioSenders()) {
+            const p = s.getParameters();
+            if (p.encodings?.length) await setParameters.call(s, tuneEncodings(p)).catch(() => {});
+        }
+        log("réglages appliqués", A);
+    };
+
+    // ---- Diagnostic --------------------------------------------------------
+    const last = new WeakMap();
+    async function status() {
+        const out = [];
+        for (const [pc, sender] of audioSenders()) {
+            const s = sender.track.getSettings();
             const stats = await pc.getStats();
             const codecs = {};
-            stats.forEach(s => s.type === "codec" && (codecs[s.id] = s));
-            for (const sender of pc.getSenders()) {
-                if (sender.track?.kind !== "audio") continue;
-                const s = sender.track.getSettings();
-                let codec, bitrate;
-                stats.forEach(r => {
-                    if (r.type === "outbound-rtp" && r.kind === "audio") {
-                        codec = codecs[r.codecId];
-                        bitrate = r.targetBitrate;
-                    }
-                });
+            stats.forEach(r => r.type === "codec" && (codecs[r.id] = r));
+            stats.forEach(r => {
+                if (r.type !== "outbound-rtp" || r.kind !== "audio") return;
+                const prev = last.get(sender);
+                last.set(sender, { t: r.timestamp, bytes: r.bytesSent, packets: r.packetsSent });
+                const dt = prev ? (r.timestamp - prev.t) / 1000 : 0;
+                const codec = codecs[r.codecId];
                 out.push({
                     canauxMicro: s.channelCount,
                     echoCancellation: s.echoCancellation,
                     noiseSuppression: s.noiseSuppression,
                     autoGainControl: s.autoGainControl,
-                    codec: codec && `${codec.mimeType} ${codec.channels}ch`,
+                    codec: codec && `${codec.mimeType} ${codec.channels} canaux`,
                     fmtp: codec?.sdpFmtpLine,
-                    debitCible: bitrate,
+                    debitCible: r.targetBitrate,
+                    debitReel: dt > 0 ? Math.round(((r.bytesSent - prev.bytes) * 8) / dt) : null,
+                    paquetsParSeconde: dt > 0 ? Math.round((r.packetsSent - prev.packets) / dt) : null,
                     stereo: s.channelCount === 2 && /stereo=1/.test(codec?.sdpFmtpLine || ""),
                 });
-            }
+            });
         }
-        console.table(out);
         return out;
     }
 
     // Boucle locale : un son à gauche seulement, envoyé d'une connexion WebRTC
-    // à une autre à travers le même patch. Si la droite reste muette à
-    // l'arrivée, l'encodeur et le décodeur sont bien en stéréo.
+    // à une autre à travers les mêmes réglages. Mesure aussi le débit réel et
+    // la taille de trame (paquets par seconde).
     async function selfTest(seconds = 3) {
         const ctx = new AudioContext({ sampleRate: 48000 });
-        const osc = ctx.createOscillator();
+        const noise = ctx.createBufferSource();
+        const buffer = ctx.createBuffer(1, 48000, 48000);
+        const ch = buffer.getChannelData(0);
+        for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * 0.5;
+        noise.buffer = buffer;
+        noise.loop = true;
         const merger = ctx.createChannelMerger(2);
-        osc.connect(merger, 0, 0);
+        noise.connect(merger, 0, 0);
         const dest = ctx.createMediaStreamDestination();
         dest.channelCount = 2;
         merger.connect(dest);
-        osc.start();
+        noise.start();
 
         const a = new RTCPeerConnection(), b = new RTCPeerConnection();
         a.onicecandidate = e => e.candidate && b.addIceCandidate(e.candidate);
         b.onicecandidate = e => e.candidate && a.addIceCandidate(e.candidate);
         const remote = new Promise(r => (b.ontrack = e => r(e.streams[0] || new MediaStream([e.track]))));
-        a.addTrack(dest.stream.getAudioTracks()[0], dest.stream);
+        const sender = a.addTrack(dest.stream.getAudioTracks()[0], dest.stream);
         await a.setLocalDescription(await a.createOffer());
         await b.setRemoteDescription(a.localDescription);
         await b.setLocalDescription(await b.createAnswer());
         await a.setRemoteDescription(b.localDescription);
+        const p = sender.getParameters();
+        if (p.encodings?.length) await sender.setParameters(p).catch(() => {});
 
         const stream = await remote;
         // Chrome ne fait couler l'audio WebRTC distant dans WebAudio que si un
@@ -170,6 +225,13 @@
         const buf = new Float32Array(2048);
         const rms = [0, 0];
         let n = 0;
+        const sample = async () => {
+            let r;
+            (await a.getStats()).forEach(s => s.type === "outbound-rtp" && s.kind === "audio" && (r = s));
+            return r;
+        };
+        await new Promise(r => setTimeout(r, 500));
+        const s0 = await sample();
         const end = performance.now() + seconds * 1000;
         while (performance.now() < end) {
             await new Promise(r => setTimeout(r, 50));
@@ -179,15 +241,36 @@
             });
             n++;
         }
-        const [left, right] = rms.map(v => v / n);
-        const stats = await b.getStats();
+        const s1 = await sample();
+        const dt = (s1.timestamp - s0.timestamp) / 1000;
         let fmtp;
-        stats.forEach(s => s.type === "codec" && /opus/i.test(s.mimeType) && (fmtp = s.sdpFmtpLine));
-        a.close(); b.close(); osc.stop(); ctx.close(); el.srcObject = null;
-        const result = { gauche: +left.toFixed(4), droite: +right.toFixed(4), fmtp, stereo: left > 0.05 && right < left * 0.1 };
+        (await b.getStats()).forEach(s => s.type === "codec" && /opus/i.test(s.mimeType) && (fmtp = s.sdpFmtpLine));
+        a.close(); b.close(); noise.stop(); ctx.close(); el.srcObject = null;
+        const [left, right] = rms.map(v => v / n);
+        const pps = (s1.packetsSent - s0.packetsSent) / dt;
+        const result = {
+            gauche: +left.toFixed(4),
+            droite: +right.toFixed(4),
+            stereo: left > 0.05 && right < left * 0.1,
+            debitReel: Math.round(((s1.bytesSent - s0.bytesSent) * 8) / dt),
+            trameMs: pps > 0 ? Math.round(1000 / pps) : null,
+            fmtp,
+        };
         log("auto-test", result);
         return result;
     }
 
-    window.plumeStereo = { enabled, bitrate: BITRATE, mungeSdp, status, selfTest };
+    // Demandé par la fenêtre Paramètres Plume (via Rust).
+    window.__plumeProbe = async kind => {
+        let data;
+        try {
+            data = kind === "test" ? await selfTest(3) : await status();
+        } catch (e) {
+            data = { erreur: String(e) };
+        }
+        invoke("audio_report", { data }).catch(() => {});
+    };
+
+    window.plumeStereo = { mungeSdp, status, selfTest, get settings() { return A; } };
+    log("actif", A);
 })();

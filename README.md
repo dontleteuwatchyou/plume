@@ -28,6 +28,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | Interface officielle, à jour | ✅ | ✅ |
 | **Nightcord** (près de 490 plugins) ou **Equicord**, mis à jour tout seuls | ❌ | ✅ |
 | **Micro en stéréo**, Opus jusqu'à 510 kb/s | ❌ | ✅ |
+| **Paramètres audio complets** : débit, CBR, FEC, DTX, trame, traitements | ❌ | ✅ |
 | **Push-to-talk global**, qui marche en jeu | ❌ | ✅ |
 | Barre de titre intégrée, logos Plume | ❌ | ✅ |
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
@@ -77,6 +78,34 @@ await plumeStereo.status()     // pendant un appel : canaux du micro, ligne Opus
 
 > ⚠️ L'annulation d'écho étant coupée, **utilise un casque**. Sinon tes correspondants s'entendront dans ton micro.
 
+## Paramètres audio
+
+Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone de notification → **Paramètres Plume…**. Tout est enregistré dès que tu le changes.
+
+| Réglage | Valeurs | Appliqué |
+|---|---|---|
+| Préréglage | Voix 96 · Haute 192 · Studio 320 · Maximum 510 kb/s | — |
+| Débit Opus | 32 à 510 kb/s | en direct |
+| Stéréo | oui / non | prochain appel |
+| Taille de trame | 10, 20, 40, 60 ms | prochain appel |
+| Débit constant (CBR) | oui / non | prochain appel |
+| Correction d'erreurs (FEC) | oui / non | prochain appel |
+| Silences allégés (DTX) | oui / non | prochain appel |
+| Priorité réseau haute | oui / non | en direct |
+| Annulation d'écho, suppression de bruit, gain auto | chacun oui / non | en direct |
+
+La fenêtre affiche aussi ce qui part réellement pendant un appel (canaux, débit réel, ligne Opus négociée) et lance l'auto-test.
+
+**Mesuré dans WebView2** avec l'auto-test (bruit blanc envoyé à gauche seulement) :
+
+| Réglages | Débit mesuré | Trame mesurée | Gauche / droite |
+|---|---|---|---|
+| 510 kb/s, CBR, 20 ms | 512 kb/s | 20 ms | 0,26 / 0 (stéréo) |
+| 128 kb/s, CBR, 60 ms | 127 kb/s | 60 ms | 0,26 / 0 (stéréo) |
+| 64 kb/s mono, FEC, 10 ms | 64 kb/s | 10 ms | 0,12 / 0,12 (mono) |
+
+> 510 kb/s est le plafond du format Opus lui-même. Les patchs qui annoncent davantage pour Discord ne peuvent pas dépasser cette limite.
+
 ## Push-to-talk global
 
 En version web, Discord n'entend ta touche que si sa fenêtre a le focus, ce qui rend le PTT inutilisable en jeu. Plume surveille la touche dans tout Windows (`GetAsyncKeyState`, sans l'intercepter : le jeu la reçoit toujours) et active le micro comme le ferait Discord.
@@ -94,7 +123,8 @@ Télécharge `Plume_x.y.z_x64-setup.exe` dans les [Releases](../../releases) et 
 
 Clic droit sur l'icône dans la zone de notification :
 
-- **Stéréo micro** : active ou coupe le patch stéréo.
+- **Paramètres Plume…** : la fenêtre des réglages audio.
+- **Stéréo micro** : active ou coupe la stéréo.
 - **Mod** : Nightcord, Equicord ou aucun.
 - **Recharger** : recharge Discord.
 
@@ -103,8 +133,18 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
 ```json
 {
   "mod": "nightcord",
-  "stereo": true,
-  "bitrate": 510000,
+  "audio": {
+    "stereo": true,
+    "bitrate": 510000,
+    "frameMs": 20,
+    "cbr": true,
+    "fec": false,
+    "dtx": false,
+    "echoCancellation": false,
+    "noiseSuppression": false,
+    "autoGainControl": false,
+    "highPriority": true
+  },
   "pttKeys": []
 }
 ```
@@ -112,8 +152,7 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
 | Clé | Rôle |
 |---|---|
 | `mod` | `nightcord`, `equicord` ou `none` : extension officielle du mod, chargée telle quelle dans WebView2, rafraîchie toutes les 6 h |
-| `stereo` | micro en stéréo |
-| `bitrate` | débit Opus visé en bit/s, de 6 000 à 510 000 |
+| `audio` | tous les réglages du micro, modifiables dans **Paramètres Plume** |
 | `pttKeys` | combinaison PTT forcée en codes VK ; vide = touche réglée dans Discord |
 
 Pour lancer Plume au démarrage de Windows, place un raccourci vers `plume.exe --minimized` dans `shell:startup`.
@@ -145,15 +184,18 @@ src-tauri/src/
   mods.rs       téléchargement et cache des extensions Nightcord / Equicord
   ptt.rs        surveillance globale de la touche PTT
   config.rs     config.json
+  settings.rs   fenêtre Paramètres Plume, application des réglages à chaud
+dist/
+  settings.html fenêtre Paramètres Plume
 inject/
   shim.js       notifications Windows natives
-  stereo.js     patch stéréo + diagnostic
+  stereo.js     réglages audio WebRTC (stéréo, débit, trame…) + diagnostic
   ptt.js        branchement du PTT global sur le moteur vocal de Discord
   brand.js      logo et nom Plume à la place de ceux de Discord
   titlebar.js   boutons de fenêtre intégrés (fenêtre sans cadre Windows)
 ```
 
-La page Discord n'a accès qu'à six commandes ([`capabilities/discord.json`](src-tauri/capabilities/discord.json)) : notification, ouverture de lien, touche PTT, et les trois boutons de fenêtre.
+La page Discord n'a accès qu'à une poignée de commandes ([`capabilities/discord.json`](src-tauri/capabilities/discord.json)) : notification, ouverture de lien, touche PTT, boutons de fenêtre, et lecture des réglages audio. Modifier la configuration est réservé à la fenêtre Paramètres ([`capabilities/settings.json`](src-tauri/capabilities/settings.json)).
 
 ## Avertissement
 

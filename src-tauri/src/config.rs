@@ -1,28 +1,65 @@
 use serde::{Deserialize, Serialize};
-
-use crate::mods::ClientMod;
 use tauri::{AppHandle, Manager};
 
-/// Réglages persistés dans `%APPDATA%\plume\config.json` et transmis à la page
-/// sous `window.__PLUME__`.
+use crate::mods::ClientMod;
+
+/// Réglages persistés dans `%APPDATA%\app.plume.desktop\config.json` et transmis
+/// à la page sous `window.__PLUME__`.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Mod client chargé comme extension : nightcord, equicord ou none.
     #[serde(rename = "mod")]
     pub client_mod: ClientMod,
-    pub stereo: bool,
-    /// Débit Opus visé pour le micro, en bit/s (Opus plafonne à 510 000).
-    pub bitrate: u32,
+    pub audio: Audio,
     /// Combinaison PTT forcée, en codes VK (ex. [5] = bouton souris 4).
     /// Vide : on reprend la touche réglée dans Discord.
     #[serde(rename = "pttKeys")]
     pub ptt_keys: Vec<i32>,
 }
 
+/// Micro envoyé par WebRTC (Opus). Lu par inject/stereo.js.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Audio {
+    pub stereo: bool,
+    /// Débit Opus visé, en bit/s (Opus plafonne à 510 000).
+    pub bitrate: u32,
+    /// Durée d'une trame Opus en ms : 10, 20, 40 ou 60.
+    pub frame_ms: u32,
+    /// Débit constant plutôt que variable.
+    pub cbr: bool,
+    /// Correction d'erreurs intégrée (résiste aux pertes, coûte du débit).
+    pub fec: bool,
+    /// Transmission discontinue : n'envoie presque rien pendant les silences.
+    pub dtx: bool,
+    pub echo_cancellation: bool,
+    pub noise_suppression: bool,
+    pub auto_gain_control: bool,
+    /// Priorité réseau haute pour l'audio.
+    pub high_priority: bool,
+}
+
 impl Default for Config {
     fn default() -> Self {
-        Self { client_mod: ClientMod::Nightcord, stereo: true, bitrate: 510_000, ptt_keys: Vec::new() }
+        Self { client_mod: ClientMod::Nightcord, audio: Audio::default(), ptt_keys: Vec::new() }
+    }
+}
+
+impl Default for Audio {
+    fn default() -> Self {
+        Self {
+            stereo: true,
+            bitrate: 510_000,
+            frame_ms: 20,
+            cbr: false,
+            fec: true,
+            dtx: false,
+            echo_cancellation: false,
+            noise_suppression: false,
+            auto_gain_control: false,
+            high_priority: true,
+        }
     }
 }
 
@@ -31,12 +68,21 @@ impl Config {
         app.path().app_config_dir().ok().map(|d| d.join("config.json"))
     }
 
+    /// Ramène les valeurs dans ce qu'Opus et WebRTC acceptent.
+    pub fn sanitize(&mut self) {
+        let a = &mut self.audio;
+        a.bitrate = a.bitrate.clamp(6_000, 510_000);
+        if ![10, 20, 40, 60].contains(&a.frame_ms) {
+            a.frame_ms = 20;
+        }
+    }
+
     pub fn load(app: &AppHandle) -> Self {
         let mut cfg: Self = Self::path(app)
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        cfg.bitrate = cfg.bitrate.clamp(6_000, 510_000);
+        cfg.sanitize();
         cfg
     }
 

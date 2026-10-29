@@ -4,6 +4,7 @@ mod config;
 mod mods;
 mod native;
 mod ptt;
+mod settings;
 
 use std::sync::Mutex;
 
@@ -152,9 +153,10 @@ fn load_discord(app: &AppHandle, w: &WebviewWindow, m: ClientMod) {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let cfg = app.state::<Mutex<Config>>().lock().unwrap().clone();
+    let cfg = settings::current(app);
     let show = MenuItem::with_id(app, "show", "Ouvrir Plume", true, None::<&str>)?;
-    let stereo = CheckMenuItem::with_id(app, "stereo", "Stéréo micro", true, cfg.stereo, None::<&str>)?;
+    let prefs = MenuItem::with_id(app, "settings", "Paramètres Plume…", true, None::<&str>)?;
+    let stereo = CheckMenuItem::with_id(app, "stereo", "Stéréo micro", true, cfg.audio.stereo, None::<&str>)?;
     let mod_items = ClientMod::ALL
         .iter()
         .map(|m| CheckMenuItem::with_id(app, format!("mod:{}", m.id()), m.label(), true, cfg.client_mod == *m, None::<&str>))
@@ -165,7 +167,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &sep, &stereo, &mod_menu, &reload, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &prefs, &sep, &stereo, &mod_menu, &reload, &sep2, &quit])?;
+    app.manage(settings::TrayItems {
+        stereo,
+        mods: ClientMod::ALL.into_iter().zip(mod_items).collect(),
+    });
 
     TrayIconBuilder::with_id("tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -177,33 +183,27 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 show_main(tray.app_handle());
             }
         })
-        .on_menu_event(move |app, event| match event.id.as_ref() {
-            "show" => show_main(app),
-            "reload" => restart_main(app),
-            "quit" => app.exit(0),
-            id if id == "stereo" || id.starts_with("mod:") => {
-                let state = app.state::<Mutex<Config>>();
-                let mut cfg = state.lock().unwrap();
-                if id == "stereo" {
-                    cfg.stereo = !cfg.stereo;
-                } else if let Some(m) = ClientMod::ALL.into_iter().find(|m| id == format!("mod:{}", m.id())) {
-                    cfg.client_mod = m;
-                }
-                for (item, m) in mod_items.iter().zip(ClientMod::ALL) {
-                    let _ = item.set_checked(cfg.client_mod == m);
-                }
-                cfg.save(app);
-                drop(cfg);
-                // Les scripts d'init sont figés à la création : on recrée la fenêtre.
-                restart_main(app);
+        .on_menu_event(|app, event| {
+            let id = event.id.as_ref();
+            let mut cfg = settings::current(app);
+            match id {
+                "show" => return show_main(app),
+                "settings" => return settings::open(app),
+                "reload" => return restart_main(app),
+                "quit" => return app.exit(0),
+                "stereo" => cfg.audio.stereo = !cfg.audio.stereo,
+                _ => match ClientMod::ALL.into_iter().find(|m| id == format!("mod:{}", m.id())) {
+                    Some(m) => cfg.client_mod = m,
+                    None => return,
+                },
             }
-            _ => {}
+            settings::apply(app, cfg);
         })
         .build(app)?;
     Ok(())
 }
 
-fn restart_main(app: &AppHandle) {
+pub(crate) fn restart_main(app: &AppHandle) {
     let app = app.clone();
     // Hors du gestionnaire d'événement, sinon la destruction bloque la boucle.
     std::thread::spawn(move || {
@@ -219,7 +219,7 @@ fn restart_main(app: &AppHandle) {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let cfg = app.state::<Mutex<Config>>().lock().unwrap().clone();
+        let cfg = settings::current(&app);
         let a = app.clone();
         let _ = app.run_on_main_thread(move || {
             if let Ok(w) = build_main(&a, &cfg) {
@@ -249,9 +249,16 @@ fn main() {
             ptt_keys,
             win_minimize,
             win_toggle_maximize,
-            win_close
+            win_close,
+            settings::open_settings,
+            settings::get_config,
+            settings::set_config,
+            settings::audio_config,
+            settings::audio_probe,
+            settings::audio_report
         ])
         .manage(ptt::PttKeys::default())
+        .manage(settings::ProbeSlot::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = Config::load(&handle);

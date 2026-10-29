@@ -8,6 +8,7 @@
     const invoke = cmd => window.__TAURI_INTERNALS__.invoke(cmd);
 
     const ICONS = {
+        settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21c4-4 6-8 7-14 4 1 8 0 9-4-1 8-6 13-13 14"/><path d="M4 21 15 9"/></svg>',
         min: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor"/></svg>',
         max: '<svg width="10" height="10" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg>',
         close: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg>',
@@ -40,9 +41,10 @@
 
         const btns = document.createElement("div");
         btns.id = "plume-winbtns";
-        for (const [act, cmd] of [["min", "win_minimize"], ["max", "win_toggle_maximize"], ["close", "win_close"]]) {
+        for (const [act, cmd] of [["settings", "open_settings"], ["min", "win_minimize"], ["max", "win_toggle_maximize"], ["close", "win_close"]]) {
             const b = document.createElement("button");
             b.dataset.act = act;
+            if (act === "settings") b.title = "Paramètres Plume";
             b.innerHTML = ICONS[act];
             b.addEventListener("click", () => invoke(cmd));
             btns.appendChild(b);
