@@ -34,6 +34,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | **Économie de mémoire** réglable + libération en arrière-plan | ❌ | ✅ |
 | **Push-to-talk global**, qui marche en jeu | ❌ | ✅ |
 | Barre de titre intégrée, logos Plume | ❌ | ✅ |
+| **Thème Plume** par défaut (nuit violette, accents mauves), désactivable dans Paramètres → Apparence | ❌ | ✅ |
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
 | Réduction dans la zone de notification | ❌ | ✅ |
 | Démarrage caché (`--minimized`) | ❌ | ✅ |
@@ -229,6 +230,8 @@ inject/
   stereo.js     audio WebRTC : RNNoise, égaliseur, gain, limiteur, stéréo, débit, trame… + diagnostic
   panel.js      Paramètres Plume dans Discord, visualiseur
   ptt.js        branchement du PTT global sur le moteur vocal de Discord
+  theme.css     thème Plume : palettes de Discord recolorées (mêmes luminosités) + fonds nuit violette
+  theme.js      application du thème + réglage dans Paramètres Discord → Apparence
   brand.js      logo et nom Plume à la place de ceux de Discord
   titlebar.js   boutons de fenêtre intégrés (fenêtre sans cadre Windows)
 ```
