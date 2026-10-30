@@ -33,15 +33,16 @@ pub enum MemoryMode {
 
 impl MemoryMode {
     /// Arguments du navigateur WebView2. Mesuré sur un compte connecté :
-    /// standard ~700 Mo, reduced ~540-590 Mo, max ~520 Mo (mémoire privée).
+    /// standard ~700 Mo, reduced ~570-590 Mo, max ~560 Mo (mémoire privée).
     pub fn browser_args(self) -> String {
         // Les valeurs par défaut de Tauri, qu'un argument personnalisé remplace.
         // + l'audio sans geste préalable : la chaîne de gain du micro
         // (WebAudio) doit tourner dès que Discord ouvre le micro.
         let base = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
-        // V8 compact : petite jeune génération, et `--lite-mode` (pas de
-        // compilateur optimisant) qui garde moins de code compilé (~-34 Mo).
-        let v8 = r#"--js-flags="--optimize-for-size --max-semi-space-size=2 --lite-mode""#;
+        // V8 compact : petite jeune génération. Jamais `--lite-mode` ni
+        // `--jitless` : ils coupent WebAssembly, dont le vocal de Discord a
+        // besoin (chiffrement DAVE) ; sans lui, l'appel se reconnecte en boucle.
+        let v8 = r#"--js-flags="--optimize-for-size --max-semi-space-size=2""#;
         match self {
             MemoryMode::Standard => base.into(),
             // Le processus graphique tourne dans le processus principal.

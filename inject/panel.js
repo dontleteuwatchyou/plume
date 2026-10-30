@@ -14,7 +14,7 @@
     };
     const MEMORY = [
         ["standard", "Standard", "Réglages d'origine du moteur."],
-        ["reduced", "Réduite", "Environ 120 Mo de moins. Interface un peu moins rapide dans les très gros serveurs."],
+        ["reduced", "Réduite", "Environ 120 Mo de moins. Aucune contrepartie visible."],
         ["max", "Maximale", "Environ 140 Mo de moins. Vidéos et streams sollicitent davantage le processeur."],
     ];
     const SECTIONS = [["audio", "Audio"], ["visu", "Visualiseur"], ["diag", "Diagnostic"], ["mod", "Mod client"], ["perf", "Performances"]];
