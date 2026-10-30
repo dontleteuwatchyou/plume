@@ -263,6 +263,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         fit(meters); fit(spec);
         const time = new Float32Array(2048), freq = [new Float32Array(1024), new Float32Array(1024)];
         const peak = [-60, -60], hold = [-60, -60], holdT = [0, 0];
+        let corrSmooth = null;
         const COLORS = ["#8b7cf6", "#3ec7e0"];
 
         const frame = now => {
@@ -302,10 +303,20 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
                 an.getFloatFrequencyData(freq[i]);
             });
             // Corrélation G/D : 1 = mono, ~0 = large, < 0 = phase inversée.
+            // Sous -50 dBFS, on ne mesurerait que le bruit de fond du micro,
+            // décorrélé par nature : on affiche « Silence ». Au-dessus, la
+            // valeur est lissée (~1 s) pour suivre la tendance, pas le bruit.
             let xy = 0, xx = 0, yy = 0;
             for (let k = 0; k < lr[0].length; k++) { xy += lr[0][k] * lr[1][k]; xx += lr[0][k] ** 2; yy += lr[1][k] ** 2; }
-            const corr = xx && yy ? xy / Math.sqrt(xx * yy) : 1;
-            $("#width").textContent = !xx && !yy ? "silence" : corr > 0.97 ? "Mono" : corr > 0.6 ? "Stéréo légère" : corr > 0 ? "Stéréo large" : "Phase inversée";
+            const rms = Math.sqrt(Math.max(xx, yy) / lr[0].length);
+            if (rms < 0.00316) {
+                corrSmooth = null;
+                $("#width").textContent = "Silence";
+            } else {
+                const corr = xx && yy ? xy / Math.sqrt(xx * yy) : 1;
+                corrSmooth = corrSmooth == null ? corr : corrSmooth * 0.95 + corr * 0.05;
+                $("#width").textContent = corrSmooth > 0.97 ? "Mono" : corrSmooth > 0.6 ? "Stéréo légère" : corrSmooth > -0.3 ? "Stéréo large" : "Phase inversée";
+            }
             $("#gr").textContent = A().limiter ? `${c.limiter.reduction.toFixed(1)} dB` : "coupé";
             $("#gainNow").textContent = `${Math.round(c.gain.gain.value * 100)} %`;
             $("#chNow").textContent = c.channels === 2 ? "2 (stéréo)" : "1 (mono)";
