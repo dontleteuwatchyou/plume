@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recorder-stream-finalize"
+description = "Enables the recorder_stream_finalize command without any pre-configured scope."
+commands.allow = ["recorder_stream_finalize"]
+
+[[permission]]
+identifier = "deny-recorder-stream-finalize"
+description = "Denies the recorder_stream_finalize command without any pre-configured scope."
+commands.deny = ["recorder_stream_finalize"]

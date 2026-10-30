@@ -1,9 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod activity;
+mod badge;
+mod capture;
+#[cfg(windows)]
+mod loopback;
 mod config;
 mod mods;
 mod native;
+mod protocol;
 mod ptt;
+mod recorder;
+mod rpc;
+mod save;
 mod settings;
 mod update;
 mod wordbomb;
@@ -12,7 +21,7 @@ use std::sync::Mutex;
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::window::Color;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
@@ -24,6 +33,7 @@ use mods::ClientMod;
 
 pub(crate) const DISCORD_URL: &str = "https://discord.com/app";
 pub const MAIN: &str = "main";
+pub const SECOND: &str = "second";
 
 /// Hôtes que la fenêtre a le droit d'afficher. Tout le reste part dans le navigateur.
 /// Pages de Plume lui-même (l'écran de démarrage `splash.html`).
@@ -83,6 +93,10 @@ fn win_toggle_maximize(window: WebviewWindow) {
 
 #[tauri::command]
 fn win_close(window: WebviewWindow) {
+    if window.label() != MAIN {
+        let _ = window.close();
+        return;
+    }
     hide_to_tray(&window);
 }
 
@@ -111,8 +125,12 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
     vec![
         format!("window.__PLUME__ = {};", serde_json::to_string(cfg).unwrap()),
         include_str!("../../inject/shim.js").to_string(),
+        include_str!("../../inject/screenshare.js").to_string(),
         include_str!("../../inject/stereo.js").to_string(),
+        include_str!("../../inject/recorder.js").to_string(),
         include_str!("../../inject/ptt.js").to_string(),
+        include_str!("../../inject/activity.js").to_string(),
+        include_str!("../../inject/desktop.js").to_string(),
         format!("window.__PLUME_THEME_CSS__ = {};", serde_json::to_string(include_str!("../../inject/theme.css")).unwrap()),
         include_str!("../../inject/theme.js").to_string(),
         include_str!("../../inject/brand.js").to_string(),
@@ -123,11 +141,39 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
 }
 
 fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
+    build_discord(app, cfg, MAIN, None)
+}
+
+/// 2e compte (comme le plugin MultiInstance de Nightcord) : une autre fenêtre
+/// avec son propre profil WebView2, donc sa propre session Discord.
+pub(crate) fn open_second_account(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(SECOND) {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return;
+    }
+    let app = app.clone();
+    // Créer une fenêtre depuis le fil de l'interface la bloquerait.
+    std::thread::spawn(move || {
+        let cfg = settings::current(&app);
+        let profile = app.path().app_local_data_dir().ok().map(|d| d.join("compte2"));
+        match build_discord(&app, &cfg, SECOND, profile) {
+            Ok(w) => {
+                let _ = w.show();
+            }
+            Err(e) => eprintln!("[plume] 2e compte : {e}"),
+        }
+    });
+}
+
+fn build_discord(app: &AppHandle, cfg: &Config, label: &str, profile: Option<std::path::PathBuf>) -> tauri::Result<WebviewWindow> {
     let nav_app = app.clone();
     let popup_app = app.clone();
+    let dl_app = app.clone();
     // Page vide d'abord : Discord ne se charge qu'une fois le mod installé.
-    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("splash.html".into()))
-        .title("Plume")
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("splash.html".into()))
+        .title(if label == MAIN { "Plume" } else { "Plume — 2e compte" })
         .background_color(Color(0x0e, 0x0c, 0x16, 0xff))
         .browser_extensions_enabled(true)
         .additional_browser_args(&cfg.memory.browser_args())
@@ -147,9 +193,36 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
         .on_new_window(move |url, _| {
             open_external(&popup_app, url.as_str());
             NewWindowResponse::Deny
+        })
+        // Téléchargements (« Enregistrer l'image »…) : la fenêtre de
+        // téléchargement d'Edge est coupée avec msWebOOUI, sans elle le fichier
+        // restait en attente. On l'écrit dans Téléchargements et on prévient.
+        .on_download(move |_, event| {
+            match event {
+                DownloadEvent::Requested { destination, .. } => {
+                    let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "fichier".into());
+                    if let Ok(dir) = dl_app.path().download_dir() {
+                        *destination = recorder::unique(&dir, &name);
+                    }
+                }
+                DownloadEvent::Finished { path, success, .. } => {
+                    let name = path.as_deref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let (title, body) = if success { ("Téléchargement terminé", format!("{name} est dans Téléchargements")) } else { ("Téléchargement échoué", name.clone()) };
+                    if let Some(w) = dl_app.get_webview_window(MAIN) {
+                        let text = serde_json::to_string(&if success { format!("{name} enregistré dans Téléchargements") } else { format!("Échec du téléchargement de {name}") }).unwrap();
+                        let _ = w.eval(format!("window.__plumeToast && window.__plumeToast({text}, {success})"));
+                    }
+                    notify(dl_app.clone(), title.into(), body);
+                }
+                _ => {}
+            }
+            true
         });
     for s in init_scripts(cfg) {
         builder = builder.initialization_script(s);
+    }
+    if let Some(dir) = profile {
+        builder = builder.data_directory(dir);
     }
     let w = builder.build()?;
     native::setup_webview(&w);
@@ -172,7 +245,8 @@ fn load_discord(app: &AppHandle, w: &WebviewWindow, m: ClientMod) {
             let target = w.clone();
             native::install_extension(&w, folder, move || {
                 splash_status(&target, "Connexion à Discord");
-                let _ = target.navigate(DISCORD_URL.parse().unwrap());
+                let url = protocol::take_start_url().unwrap_or_else(|| DISCORD_URL.into());
+                let _ = target.navigate(url.parse().unwrap_or_else(|_| DISCORD_URL.parse().unwrap()));
             });
         });
     });
@@ -182,6 +256,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let cfg = settings::current(app);
     let show = MenuItem::with_id(app, "show", "Ouvrir Plume", true, None::<&str>)?;
     let prefs = MenuItem::with_id(app, "settings", "Paramètres Plume…", true, None::<&str>)?;
+    let second = MenuItem::with_id(app, "second", "Ouvrir un 2e compte", true, None::<&str>)?;
     let stereo = CheckMenuItem::with_id(app, "stereo", "Stéréo micro", true, cfg.audio.stereo, None::<&str>)?;
     let mod_items = ClientMod::ALL
         .iter()
@@ -193,7 +268,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &prefs, &sep, &stereo, &mod_menu, &reload, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &prefs, &second, &sep, &stereo, &mod_menu, &reload, &sep2, &quit])?;
     app.manage(settings::TrayItems {
         stereo,
         mods: ClientMod::ALL.into_iter().zip(mod_items).collect(),
@@ -215,6 +290,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             match id {
                 "show" => return show_main(app),
                 "settings" => return settings::open(app),
+                "second" => return open_second_account(app),
                 "reload" => return reload_discord(app),
                 "quit" => return app.exit(0),
                 "stereo" => cfg.audio.stereo = !cfg.audio.stereo,
@@ -265,7 +341,10 @@ pub(crate) fn reload_discord(app: &AppHandle) {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            show_main(app);
+            protocol::handle(app, &args);
+        }))
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
@@ -273,6 +352,7 @@ fn main() {
         )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             notify,
@@ -289,7 +369,17 @@ fn main() {
             update::update_check,
             update::update_pending,
             update::update_install,
-            wordbomb::wordbomb_type
+            wordbomb::wordbomb_type,
+            recorder::recorder_pick_folder,
+            recorder::recorder_save,
+            recorder::recorder_stream_init,
+            recorder::recorder_stream_append,
+            recorder::recorder_stream_finalize,
+            badge::set_badge,
+            save::save_url,
+            capture::capture_sources,
+            capture::capture_start,
+            capture::capture_stop
         ])
         .manage(ptt::PttKeys::default())
         .manage(update::Pending::default())
@@ -307,6 +397,9 @@ fn main() {
             }
             build_tray(&handle)?;
             ptt::spawn(handle.clone());
+            activity::spawn(handle.clone());
+            protocol::register();
+            rpc::spawn(handle.clone());
             mods::refresh_in_background(handle.clone(), cfg.client_mod);
             if cfg.auto_update {
                 update::check_on_startup(handle);

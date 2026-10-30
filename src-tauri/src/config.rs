@@ -43,7 +43,9 @@ impl MemoryMode {
         // Les valeurs par défaut de Tauri, qu'un argument personnalisé remplace.
         // + l'audio sans geste préalable : la chaîne de gain du micro
         // (WebAudio) doit tourner dès que Discord ouvre le micro.
-        let base = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+        // + la capture de sa propre page acceptée sans sélecteur (seulement les
+        // demandes `preferCurrentTab`) : l'enregistreur d'appels filme Plume.
+        let base = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --auto-accept-this-tab-capture";
         // V8 compact : petite jeune génération. Jamais `--lite-mode` ni
         // `--jitless` : ils coupent WebAssembly, dont le vocal de Discord a
         // besoin (chiffrement DAVE) ; sans lui, l'appel se reconnecte en boucle.

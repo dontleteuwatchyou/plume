@@ -2,9 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "discord",
   "description": "Les seules commandes que la page Discord peut appeler.",
-  "windows": ["main"],
+  "windows": ["main", "second"],
   "remote": {
     "urls": ["https://discord.com/*", "https://*.discord.com/*"]
   },
-  "permissions": ["allow-notify", "allow-open-url", "allow-ptt-keys", "allow-win-minimize", "allow-win-toggle-maximize", "allow-win-close", "allow-get-config", "allow-set-config", "allow-audio-config", "allow-rnnoise-worklet", "allow-rnnoise-wasm", "allow-update-check", "allow-update-pending", "allow-update-install", "allow-wordbomb-type"]
+  "permissions": ["allow-notify", "allow-open-url", "allow-ptt-keys", "allow-win-minimize", "allow-win-toggle-maximize", "allow-win-close", "allow-get-config", "allow-set-config", "allow-audio-config", "allow-rnnoise-worklet", "allow-rnnoise-wasm", "allow-update-check", "allow-update-pending", "allow-update-install", "allow-wordbomb-type", "allow-recorder-pick-folder", "allow-recorder-save", "allow-recorder-stream-init", "allow-recorder-stream-append", "allow-recorder-stream-finalize", "allow-set-badge", "allow-save-url", "allow-capture-sources", "allow-capture-start", "allow-capture-stop"]
 }

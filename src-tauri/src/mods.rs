@@ -12,6 +12,9 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+/// Nightcord recompilé par Plume (scripts/build-nightcord.ps1) : sa version web
+/// avec les plugins que l'officielle retire (enregistreurs, StreamProof…).
+const PLUME_NIGHTCORD: &str = "https://github.com/dontleteuwatchyou/plume/releases/download/nightcord/nightcord-plume.zip";
 const NIGHTCORD_RELEASE: &str = "https://source.nightcord.st/api/v1/repos/nightcord/nightcord/releases/latest";
 const EQUICORD_EXTENSION: &str = "https://github.com/Equicord/Equicord/releases/download/latest/extension-chrome.zip";
 const MAX_AGE: Duration = Duration::from_secs(6 * 3600);
@@ -95,7 +98,14 @@ fn extension_url(m: ClientMod) -> Result<String, String> {
 /// que WebView2 a enregistré (il le marque alors cassé et refuse de le
 /// réinstaller).
 fn download(m: ClientMod, root: &Path) -> Result<PathBuf, String> {
-    let zip = get_bytes(&extension_url(m)?)?;
+    let zip = match m {
+        // Repli sur l'extension officielle si la nôtre n'est pas publiée.
+        ClientMod::Nightcord => get_bytes(PLUME_NIGHTCORD).or_else(|e| {
+            eprintln!("[plume] nightcord-plume : {e}, repli sur l'officielle");
+            get_bytes(&extension_url(m)?)
+        })?,
+        _ => get_bytes(&extension_url(m)?)?,
+    };
     let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     // Dossier temporaire propre à ce téléchargement.
     let tmp = root.join(format!("tmp-{}", now.as_nanos()));

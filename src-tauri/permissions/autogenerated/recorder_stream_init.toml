@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recorder-stream-init"
+description = "Enables the recorder_stream_init command without any pre-configured scope."
+commands.allow = ["recorder_stream_init"]
+
+[[permission]]
+identifier = "deny-recorder-stream-init"
+description = "Denies the recorder_stream_init command without any pre-configured scope."
+commands.deny = ["recorder_stream_init"]

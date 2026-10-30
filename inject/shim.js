@@ -16,4 +16,19 @@
         close() { this.dispatchEvent(new Event("close")); this.onclose?.(); }
     }
     window.Notification = PlumeNotification;
+
+    // Le sélecteur de partage d'écran ne s'ouvre que sur un clic de l'utilisateur :
+    // un plugin qui relance le moteur vidéo en rejoignant un vocal ne doit pas
+    // le faire surgir.
+    const md = navigator.mediaDevices;
+    const getDisplayMedia = md.getDisplayMedia.bind(md);
+    md.getDisplayMedia = function (constraints) {
+        // Qui l'a demandé (diagnostic) : window.__plumeDisplayLog.
+        (window.__plumeDisplayLog ||= []).push({ at: Date.now(), stack: new Error().stack });
+        // Capture de Plume lui-même : acceptée sans sélecteur (config.rs).
+        if (!constraints?.preferCurrentTab && !navigator.userActivation?.isActive) {
+            return Promise.reject(new DOMException("Partage d'écran demandé sans clic", "NotAllowedError"));
+        }
+        return getDisplayMedia(constraints);
+    };
 })();

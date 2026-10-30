@@ -1,0 +1,116 @@
+diff --git a/blacklist.txt b/blacklist.txt
+index fc68ffb..516ccfb 100644
+--- a/blacklist.txt
++++ b/blacklist.txt
+@@ -4,14 +4,11 @@ wordBomb
+ multiInstance
+ soundcloudPlayer
+ youtubePlayer
+-autoTranslateNightcord
+-fixScreenshare
+ mullvadDNS
+-streamProof
+-voiceDictation
+ nightcordUpdater
+ stereoInstaller
+-AutoCallRecorder
+ PrivateBrowser
+ Qxchat
+-Nightcordnews
+\ No newline at end of file
++Nightcordnews
++
++fixScreenshare
+\ No newline at end of file
+diff --git a/scripts/build/buildWeb.mjs b/scripts/build/buildWeb.mjs
+index 39c592f..8fc5573 100644
+--- a/scripts/build/buildWeb.mjs
++++ b/scripts/build/buildWeb.mjs
+@@ -43,22 +43,7 @@ import { BUILD_TIMESTAMP, commonOpts, globPlugins, IS_DEV, IS_REPORTER, IS_COMPA
+ const extensionStubPlugin = {
+     name: "extension-heavy-module-stubs",
+     setup(build) {
+-        // ── autoTranslateNightcord ──────────────────────────────────────────
+-        build.onResolve({ filter: /autoTranslateNightcord/ }, args => ({
+-            path: args.path,
+-            namespace: "ext-stub-autoTranslate"
+-        }));
+-        build.onLoad({ filter: /.*/, namespace: "ext-stub-autoTranslate" }, () => ({
+-            loader: "js",
+-            contents: `
+-export function getActiveLanguage() { return "en"; }
+-export function t(key) { return key; }
+-export function tPlugin(key) { return key; }
+-export function useTranslation() { return { t: (key) => key, lang: "en" }; }
+-export const translations = {};
+-export default {};
+-`
+-        }));
++        // Plume : traductions gardées (Nightcord en français comme l’appli).
+ 
+         // ── nightcordNews/icon.ts ───────────────────────────────────────────
+         // The import is `from "../icon"` so args.path = "../icon" — we must
+diff --git a/src/nightcordplugins/AutoCallRecorder/recorder.ts b/src/nightcordplugins/AutoCallRecorder/recorder.ts
+index 89f5a15..a255f56 100644
+--- a/src/nightcordplugins/AutoCallRecorder/recorder.ts
++++ b/src/nightcordplugins/AutoCallRecorder/recorder.ts
+@@ -39,6 +39,7 @@ let pendingChunkPromises: Promise<any>[] = [];
+ const CHUNK_TIME_MS = 5000;
+ let startTimeMs = 0;
+ let memoryCheckInterval: any;
++let remoteTimer: any;
+ 
+ export function getRecordingDurationMs(): number {
+     if (!isRecording) return 0;
+@@ -190,6 +191,39 @@ export async function startRecording(opts: RecordingOptions): Promise<boolean> {
+             console.warn("[AutoCallRecorder] Desktop loopback capture failed:", e);
+         }
+ 
++        // Plume (Discord web) : pas de capture du bureau. Les voix des autres
++        // arrivent par la connexion vocale de la page, que Plume expose ; on
++        // les mélange au micro, y compris celles de ceux qui rejoignent en route.
++        const plumeRemote = (window as any).__plumeRemoteAudio as (() => MediaStreamTrack[]) | undefined;
++        if (!capturedSystem && plumeRemote) {
++            const ctx = recordCtx, dest = recordDest;
++            const mixed = new Set<string>();
++            const mixRemote = () => {
++                for (const track of plumeRemote()) {
++                    if (mixed.has(track.id)) continue;
++                    mixed.add(track.id);
++                    ctx.createMediaStreamSource(new MediaStream([track])).connect(dest);
++                }
++            };
++            mixRemote();
++            remoteTimer = setInterval(mixRemote, 1000);
++            capturedSystem = true;
++
++            if (opts.mode === "video") {
++                try {
++                    // La fenêtre de Plume elle-même : acceptée sans sélecteur, quel que soit l'écran.
++                    systemStream = await navigator.mediaDevices.getDisplayMedia({
++                        video: { frameRate: { ideal: opts.videoQuality === "1080p60" ? 60 : 30 } },
++                        audio: false,
++                        preferCurrentTab: true,
++                        selfBrowserSurface: "include"
++                    } as any);
++                } catch (e) {
++                    console.warn("[AutoCallRecorder] Screen capture failed, voice only:", e);
++                }
++            }
++        }
++
+         // Failsafe: if neither mic nor system audio could be captured, attach a silent oscillator so recorder runs reliably
+         if (!capturedMic && !capturedSystem) {
+             const osc = recordCtx.createOscillator();
+@@ -367,6 +401,7 @@ function cleanup() {
+     isStopping = false;
+     isStreamMode = false;
+     clearInterval(memoryCheckInterval);
++    clearInterval(remoteTimer);
+     if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+     if (systemStream) { systemStream.getTracks().forEach(t => t.stop()); systemStream = null; }
+     if (recordCtx) { recordCtx.close(); recordCtx = null; }
+diff --git a/src/plugins/screenRecorder.equibop/index.tsx b/src/plugins/screenRecorder/index.tsx
+similarity index 100%
+rename from src/plugins/screenRecorder.equibop/index.tsx
+rename to src/plugins/screenRecorder/index.tsx

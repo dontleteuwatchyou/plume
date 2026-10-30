@@ -312,6 +312,17 @@
     }
     setInterval(() => { for (const pc of peers) if (pc.connectionState !== "closed") enforce(pc); }, 3000);
 
+    // Voix reçues de l'appel en cours, pour l'enregistreur d'appels de
+    // Nightcord (sa capture du bureau n'existe pas hors Electron).
+    window.__plumeRemoteAudio = () => {
+        const out = [];
+        for (const pc of peers) {
+            if (pc.connectionState === "closed") continue;
+            for (const r of pc.getReceivers()) if (r.track?.kind === "audio" && r.track.readyState === "live") out.push(r.track);
+        }
+        return out;
+    };
+
     // Réglages modifiés dans Paramètres Plume, appliqués sans recharger.
     window.__plumeApply = async next => {
         A = { ...next };
