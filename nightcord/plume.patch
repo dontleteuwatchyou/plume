@@ -1,8 +1,8 @@
 diff --git a/blacklist.txt b/blacklist.txt
-index fc68ffb..516ccfb 100644
+index fc68ffb..18d4a60 100644
 --- a/blacklist.txt
 +++ b/blacklist.txt
-@@ -4,14 +4,11 @@ wordBomb
+@@ -4,14 +4,12 @@ wordBomb
  multiInstance
  soundcloudPlayer
  youtubePlayer
@@ -21,6 +21,7 @@ index fc68ffb..516ccfb 100644
 +Nightcordnews
 +
 +fixScreenshare
++DMBomb
 \ No newline at end of file
 diff --git a/scripts/build/buildWeb.mjs b/scripts/build/buildWeb.mjs
 index 39c592f..8fc5573 100644
@@ -50,6 +51,34 @@ index 39c592f..8fc5573 100644
  
          // ── nightcordNews/icon.ts ───────────────────────────────────────────
          // The import is `from "../icon"` so args.path = "../icon" — we must
+diff --git a/src/api/Settings.ts b/src/api/Settings.ts
+index 6a18c9f..22f67bb 100644
+--- a/src/api/Settings.ts
++++ b/src/api/Settings.ts
+@@ -199,10 +199,9 @@ if (!IS_REPORTER && settings.plugins && plugins) {
+             FORCE_DISABLED_DEFAULT_PLUGIN_KEYS.has(pluginKey.toLowerCase())
+             || FORCE_DISABLED_DEFAULT_PLUGIN_KEYS.has(String(pluginDef?.name ?? "").toLowerCase());
+ 
+-        if (forceOff) {
+-            if (settings.plugins[pluginKey]) settings.plugins[pluginKey].enabled = false;
+-            continue;
+-        }
++        // Plume : désactivés par défaut seulement — le choix de l'utilisateur
++        // n'est plus écrasé à chaque démarrage.
++        if (forceOff) continue;
+ 
+         const isRequired = Boolean(pluginDef?.required);
+         const isDefault = Boolean(pluginDef?.enabledByDefault);
+@@ -247,9 +246,6 @@ export const SettingsStore = new SettingsStoreClass(settings, {
+             if (isRequired && target[key].enabled === false) {
+                 target[key].enabled = true;
+             }
+-            if (forceOff) {
+-                target[key].enabled = false;
+-            }
+ 
+             return target[key];
+         }
 diff --git a/src/nightcordplugins/AutoCallRecorder/recorder.ts b/src/nightcordplugins/AutoCallRecorder/recorder.ts
 index 89f5a15..a255f56 100644
 --- a/src/nightcordplugins/AutoCallRecorder/recorder.ts
