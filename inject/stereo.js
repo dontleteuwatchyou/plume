@@ -37,39 +37,42 @@
         return p;
     }
 
+    // Réécrit chaque section audio de la description :
+    //  - ligne Opus (fmtp) : stéréo, débit, CBR, FEC, DTX ;
+    //  - `b=AS` : Discord y écrit le débit du salon (64 kb/s par défaut sur un
+    //    serveur), que WebRTC respecte comme plafond : on met le nôtre ;
+    //  - `transport-cc` retiré pour l'audio : sinon l'estimateur de bande
+    //    passante plafonne l'audio (vu à ~150 kb/s). La vidéo le garde ;
+    //  - taille de trame (a=ptime / a=maxptime), en fin de section.
     function mungeSdp(sdp) {
         if (typeof sdp !== "string") return sdp;
         const nl = sdp.includes("\r\n") ? "\r\n" : "\n";
-        const pts = [...sdp.matchAll(/a=rtpmap:(\d+) opus\/48000\/2/gi)].map(m => m[1]);
         const want = opusParams();
-        for (const pt of pts) {
-            const fmtp = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
-            const params = new Map();
-            const m = fmtp.exec(sdp);
-            if (m) for (const kv of m[1].split(";").map(s => s.trim()).filter(Boolean)) {
-                const i = kv.indexOf("=");
-                params.set(i < 0 ? kv : kv.slice(0, i), i < 0 ? "" : kv.slice(i + 1));
+        return sdp.split(/(?=^m=)/m).map(section => {
+            if (!section.startsWith("m=audio")) return section;
+            const pts = [...section.matchAll(/a=rtpmap:(\d+) opus\/48000\/2/gi)].map(m => m[1]);
+            if (!pts.length) return section;
+            for (const pt of pts) {
+                const fmtp = new RegExp(`^a=fmtp:${pt} ([^\r\n]*)`, "m");
+                const params = new Map();
+                const m = fmtp.exec(section);
+                if (m) for (const kv of m[1].split(";").map(x => x.trim()).filter(Boolean)) {
+                    const i = kv.indexOf("=");
+                    params.set(i < 0 ? kv : kv.slice(0, i), i < 0 ? "" : kv.slice(i + 1));
+                }
+                if (!A.stereo) { params.delete("stereo"); params.delete("sprop-stereo"); }
+                for (const [k, v] of Object.entries(want)) params.set(k, v);
+                const line = `a=fmtp:${pt} ${[...params].map(([k, v]) => (v === "" ? k : `${k}=${v}`)).join(";")}`;
+                section = m ? section.replace(fmtp, line) : section.replace(new RegExp(`^(a=rtpmap:${pt} opus/48000/2[^\r\n]*)`, "im"), `$1${nl}${line}`);
+                section = section.replace(new RegExp(`^a=rtcp-fb:${pt} transport-cc\r?\n`, "gm"), "");
             }
-            if (!A.stereo) { params.delete("stereo"); params.delete("sprop-stereo"); }
-            for (const [k, v] of Object.entries(want)) params.set(k, v);
-            const line = `a=fmtp:${pt} ${[...params].map(([k, v]) => (v === "" ? k : `${k}=${v}`)).join(";")}`;
-            sdp = m ? sdp.replace(fmtp, line) : sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2[^\\r\\n]*)`, "i"), `$1${nl}${line}`);
-        }
-        // Sections audio : Discord y écrit `b=AS:<débit du salon>` (64 kb/s par
-        // défaut sur un serveur), que WebRTC respecte comme plafond ; on le
-        // remplace par le débit choisi. La taille de trame (a=ptime /
-        // a=maxptime) est ajoutée en fin de section, après les autres attributs.
-        if (pts.length) {
-            sdp = sdp.split(/(?=^m=)/m).map(section => {
-                if (!section.startsWith("m=audio")) return section;
-                section = section.replace(/^(b=(AS|TIAS):\d+|a=(max)?ptime:\d+)\r?\n/gm, "");
-                // +32 kb/s : b=AS compte aussi les en-têtes RTP, pas seulement Opus.
-                section = section.replace(/^(c=[^\r\n]*\r?\n)/m, `$1b=AS:${Math.ceil(A.bitrate / 1000) + 32}${nl}`);
-                const end = section.endsWith("\n") ? "" : nl;
-                return `${section}${end}a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`;
-            }).join("");
-        }
-        return sdp;
+            section = section.replace(/^a=extmap:\d+[^\r\n]*transport-wide-cc[^\r\n]*\r?\n/gm, "");
+            section = section.replace(/^(b=(AS|TIAS):\d+|a=(max)?ptime:\d+)\r?\n/gm, "");
+            // +32 kb/s : b=AS compte aussi les en-têtes RTP, pas seulement Opus.
+            section = section.replace(/^(c=[^\r\n]*\r?\n)/m, `$1b=AS:${Math.ceil(A.bitrate / 1000) + 32}${nl}`);
+            const end = section.endsWith("\n") ? "" : nl;
+            return `${section}${end}a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`;
+        }).join("");
     }
 
     // ---- 1. Micro ----------------------------------------------------------
@@ -206,21 +209,40 @@
         P[name] = function (desc, ...rest) {
             peers.add(this);
             if (desc?.sdp) desc = { type: desc.type, sdp: mungeSdp(desc.sdp) };
-            return orig.call(this, desc, ...rest);
+            // Après chaque négociation, Discord a pu redéfinir l'émetteur.
+            return orig.call(this, desc, ...rest).then(r => (enforce(this), r));
         };
     }
+    // Discord peut fixer le débit dès la création de l'émetteur.
+    const addTransceiver = P.addTransceiver;
+    P.addTransceiver = function (trackOrKind, init, ...rest) {
+        peers.add(this);
+        const kind = typeof trackOrKind === "string" ? trackOrKind : trackOrKind?.kind;
+        if (kind === "audio" && init?.sendEncodings?.length) {
+            init = { ...init, sendEncodings: init.sendEncodings.map(e => tuneEncoding({ ...e })) };
+        }
+        return addTransceiver.call(this, trackOrKind, init, ...rest);
+    };
 
     // ---- 3. Émetteur -------------------------------------------------------
-    function tuneEncodings(params) {
-        for (const e of params.encodings || []) {
-            e.maxBitrate = A.bitrate;
-            if (A.highPriority) { e.priority = "high"; e.networkPriority = "high"; }
+    function tuneEncoding(e) {
+        e.maxBitrate = A.bitrate;
+        const prio = A.highPriority ? "high" : "low";
+        e.priority = prio;
+        e.networkPriority = prio;
+        return e;
+    }
+    // L'émetteur audio se reconnaît par sa connexion : Discord le règle parfois
+    // avant d'y attacher le micro (piste encore nulle).
+    function senderKind(sender) {
+        if (sender.track) return sender.track.kind;
+        for (const pc of peers) {
+            for (const t of pc.getTransceivers?.() || []) if (t.sender === sender) return t.receiver.track.kind;
         }
-        return params;
     }
     const setParameters = RTCRtpSender.prototype.setParameters;
     RTCRtpSender.prototype.setParameters = function (params, ...rest) {
-        if (this.track?.kind === "audio" && params?.encodings?.length) tuneEncodings(params);
+        if (params?.encodings?.length && senderKind(this) === "audio") params.encodings.forEach(tuneEncoding);
         return setParameters.call(this, params, ...rest);
     };
 
@@ -228,10 +250,22 @@
         const out = [];
         for (const pc of peers) {
             if (pc.connectionState === "closed") { peers.delete(pc); continue; }
-            for (const s of pc.getSenders()) if (s.track?.kind === "audio") out.push([pc, s]);
+            for (const s of pc.getSenders()) if (senderKind(s) === "audio") out.push([pc, s]);
         }
         return out;
     }
+
+    // Remet nos réglages sur les émetteurs audio s'ils ont bougé.
+    function enforce(pc) {
+        for (const s of pc.getSenders()) {
+            if (senderKind(s) !== "audio") continue;
+            const p = s.getParameters();
+            if (!p.encodings?.length) continue;
+            const ok = p.encodings.every(e => e.maxBitrate === A.bitrate && e.priority === (A.highPriority ? "high" : "low"));
+            if (!ok) setParameters.call(s, (p.encodings.forEach(tuneEncoding), p)).catch(() => {});
+        }
+    }
+    setInterval(() => { for (const pc of peers) if (pc.connectionState !== "closed") enforce(pc); }, 3000);
 
     // Réglages modifiés dans Paramètres Plume, appliqués sans recharger.
     window.__plumeApply = async next => {
@@ -244,10 +278,7 @@
             if (t.readyState === "ended") { mics.delete(t); continue; }
             await t.applyConstraints(Object.fromEntries(PROCESSING.map(k => [k, !!A[k]]))).catch(() => {});
         }
-        for (const [, s] of audioSenders()) {
-            const p = s.getParameters();
-            if (p.encodings?.length) await setParameters.call(s, tuneEncodings(p)).catch(() => {});
-        }
+        for (const pc of peers) if (pc.connectionState !== "closed") enforce(pc);
         log("réglages appliqués", A);
     };
 
@@ -374,6 +405,29 @@
 
     const setMonitor = (c, on) => { c.monitor = on; wire(c); };
 
-    window.plumeStereo = { mungeSdp, status, selfTest, activeChain, inCall, setMonitor, get settings() { return A; } };
+    // Débogage : ce que chaque connexion vocale a réellement appliqué.
+    async function inspect() {
+        const audio = sdp => (sdp || "").split(/(?=^m=)/m).filter(s => s.startsWith("m=audio"))
+            .map(s => s.split(/\r?\n/).filter(l => /^(b=|a=fmtp|a=ptime|a=maxptime|a=extmap.*(transport-cc|abs-send)|a=rtcp-fb)/.test(l)));
+        const out = [];
+        for (const pc of peers) {
+            if (pc.connectionState === "closed") continue;
+            let pair, outb;
+            (await pc.getStats()).forEach(s => {
+                if (s.type === "candidate-pair" && s.nominated) pair = { disponible: s.availableOutgoingBitrate, rtt: s.currentRoundTripTime };
+                if (s.type === "outbound-rtp" && s.kind === "audio") outb = { cible: s.targetBitrate };
+            });
+            out.push({
+                etat: pc.connectionState,
+                emetteurs: pc.getSenders().map(s => ({ piste: s.track?.kind ?? "aucune", encodings: s.getParameters().encodings })),
+                local: audio(pc.localDescription?.sdp),
+                distant: audio(pc.remoteDescription?.sdp),
+                pair, outb,
+            });
+        }
+        return out;
+    }
+
+    window.plumeStereo = { mungeSdp, status, selfTest, inspect, activeChain, inCall, setMonitor, get settings() { return A; } };
     log("actif", A);
 })();
