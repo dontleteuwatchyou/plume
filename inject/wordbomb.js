@@ -31,8 +31,9 @@
         const v = Number(raw);
         return raw !== null && Number.isFinite(v) ? v : def;
     };
-    let lps = getNum("wb_lps", 50);
+    let lps = getNum("wb_lps", 12);
     let humanChance = getNum("wb_humanChance", 0);
+    let maxLen = getNum("wb_maxLen", 9);
 
     let dict = null;
     let loading = null;
@@ -108,8 +109,12 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
             const words = [...new Set(all.flat())]
                 .filter(w => /^[a-zœæéèêëàâäîïôöùûüç]{3,15}$/i.test(w))
                 .map(fold);
-            dict = words.length ? words : FALLBACK;
+            // « ancre » et « ancré » donnent le même mot une fois les accents
+            // retirés : sans dédoublonnage la liste affiche deux fois le même.
+            dict = words.length ? [...new Set(words)] : FALLBACK;
             status(`${dict.length} mots`);
+            // Une syllabe déjà tapée pendant le chargement n'avait aucune suggestion.
+            if ($.track) draw();
             return dict;
         });
         return loading;
@@ -123,7 +128,7 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
         const found = [];
         for (let i = 0; i < dict.length; i++) {
             const w = dict[i];
-            if (used.has(w) || !w.includes(q)) continue;
+            if (used.has(w) || w.length > maxLen || !w.includes(q)) continue;
             let fresh = 0;
             const seen = new Set();
             for (const c of w) if (alphabet.includes(c) && !seen.has(c)) { seen.add(c); fresh++; }
@@ -143,7 +148,11 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
         if (!at) return status("Ouvre le jeu (Activity) d'abord");
         busy = true;
         const { x, y } = at;
-        const delay = Math.max(12, 1000 / lps);
+        // La vitesse n'est pas constante : un mot tapé à 12 l/s, le suivant à 5,
+        // puis 16… et un temps d'arrêt de temps en temps. C'est ce qui distingue
+        // une frappe humaine d'un robot parfaitement régulier.
+        const speed = Math.max(3, lps) * (0.4 + Math.random() * 1.0);
+        const delay = Math.max(12, 1000 / speed);
         const type = t => invoke("wordbomb_type", { text: t, x, y, click: false });
         try {
             status(`Frappe : ${word}`);
@@ -159,8 +168,9 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
                     await wait(delay * (1.2 + Math.random()));
                 }
                 await type(word[i]);
-                // ±25 % : un rythme parfaitement régulier se voit.
-                await wait(delay * (0.75 + Math.random() * 0.5));
+                // ±30 % par lettre, plus une hésitation une fois sur douze.
+                await wait(delay * (0.7 + Math.random() * 0.6));
+                if (Math.random() < 0.08) await wait(delay * (2 + Math.random() * 3));
             }
             await wait(delay * (0.8 + Math.random() * 0.6));
             await type("\n");
@@ -226,16 +236,19 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
 
     function setting(k, value) {
         if (k === "lps") lps = value;
+        else if (k === "maxLen") maxLen = value;
         else humanChance = value;
-        localStorage.setItem(`wb_${k}`, String(value));
+        // L'affichage d'abord : un stockage refusé ne doit pas figer les curseurs.
         $.set.querySelectorAll("[data-k]").forEach(i => {
             if (i.dataset.k === k) i.closest("label").querySelector("b").textContent = value;
         });
         syncLabel();
+        if (k === "maxLen") draw();
+        try { localStorage.setItem(`wb_${k}`, String(value)); } catch {}
     }
 
     function syncLabel() {
-        if ($.rate) $.rate.textContent = `${lps} l/s · ${humanChance} %`;
+        if ($.rate) $.rate.textContent = `${lps} l/s · ${humanChance} % · ≤ ${maxLen}`;
     }
 
     function mount() {
@@ -250,8 +263,9 @@ input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
     <div class="words"></div>
     <div class="track"></div>
     <div class="set" hidden>
-      <label>Vitesse <b>${lps}</b> lettres/s<input type="range" min="10" max="100" step="1" value="${lps}" data-k="lps"></label>
+      <label>Vitesse <b>${lps}</b> lettres/s<input type="range" min="5" max="60" step="1" value="${lps}" data-k="lps"></label>
       <label>Erreurs <b>${humanChance}</b> %<input type="range" min="0" max="100" step="1" value="${humanChance}" data-k="humanChance"></label>
+      <label>Longueur max <b>${maxLen}</b> lettres<input type="range" min="4" max="15" step="1" value="${maxLen}" data-k="maxLen"></label>
     </div>
     <div class="foot"><span>—</span><span class="rate"></span><button data-a="set" aria-label="Réglages" aria-pressed="false">⚙</button><button data-a="undo">Annuler</button><button data-a="reset">Reset</button></div>
   </div>
