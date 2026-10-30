@@ -72,3 +72,16 @@ pub fn set_config(app: AppHandle, config: Config) {
 pub fn audio_config(app: AppHandle) -> Audio {
     current(&app).audio
 }
+
+/// Processeur AudioWorklet de RNNoise, livré à la page seulement quand la
+/// suppression de bruit est activée.
+#[tauri::command]
+pub fn rnnoise_worklet() -> &'static str {
+    include_str!("../../vendor/rnnoise/worklet.js")
+}
+
+/// Binaire WebAssembly de RNNoise (SIMD), envoyé en octets bruts.
+#[tauri::command]
+pub fn rnnoise_wasm() -> tauri::ipc::Response {
+    tauri::ipc::Response::new(include_bytes!("../../vendor/rnnoise/rnnoise_simd.wasm").to_vec())
+}

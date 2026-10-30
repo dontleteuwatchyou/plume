@@ -276,7 +276,9 @@ fn main() {
             win_close,
             settings::get_config,
             settings::set_config,
-            settings::audio_config
+            settings::audio_config,
+            settings::rnnoise_worklet,
+            settings::rnnoise_wasm
         ])
         .manage(ptt::PttKeys::default())
         .setup(|app| {

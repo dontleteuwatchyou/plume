@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rnnoise-wasm"
+description = "Enables the rnnoise_wasm command without any pre-configured scope."
+commands.allow = ["rnnoise_wasm"]
+
+[[permission]]
+identifier = "deny-rnnoise-wasm"
+description = "Denies the rnnoise_wasm command without any pre-configured scope."
+commands.deny = ["rnnoise_wasm"]

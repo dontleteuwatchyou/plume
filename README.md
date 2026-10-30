@@ -30,6 +30,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | **Micro en stéréo**, Opus jusqu'à 510 kb/s | ❌ | ✅ |
 | **Paramètres Plume intégrés à Discord** : débit, gain jusqu'à 800 %, limiteur, CBR, FEC, DTX, trame, traitements | ❌ | ✅ |
 | **Visualiseur** : niveaux gauche/droite, spectre, image stéréo, réduction du limiteur | ❌ | ✅ |
+| **Suppression de bruit RNNoise** (locale, WebAssembly) et **égaliseur** 5 bandes + coupe-bas | ❌ | ✅ |
 | **Économie de mémoire** réglable + libération en arrière-plan | ❌ | ✅ |
 | **Push-to-talk global**, qui marche en jeu | ❌ | ✅ |
 | Barre de titre intégrée, logos Plume | ❌ | ✅ |
@@ -97,6 +98,8 @@ Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone 
 | Réglage | Valeurs | Appliqué |
 |---|---|---|
 | Préréglage | Voix 96 · Haute 192 · Studio 320 · Maximum 510 kb/s | — |
+| Suppression de bruit RNNoise | oui / non (~20 ms de latence) | en direct |
+| Égaliseur | coupe-bas (60–150 Hz) + 5 bandes ±12 dB, 4 préréglages | en direct |
 | Gain du micro | 0 à 800 % (+18 dB), au-delà du maximum de Discord | en direct |
 | Limiteur | compresseur + écrêteur de sécurité : jamais au-dessus de 0 dBFS | en direct |
 | Débit Opus | 32 à 510 kb/s | en direct |
@@ -215,7 +218,7 @@ src-tauri/src/
   settings.rs   application des réglages (à chaud, rechargement ou redémarrage)
 inject/
   shim.js       notifications Windows natives
-  stereo.js     audio WebRTC : gain, limiteur, stéréo, débit, trame… + diagnostic
+  stereo.js     audio WebRTC : RNNoise, égaliseur, gain, limiteur, stéréo, débit, trame… + diagnostic
   panel.js      Paramètres Plume dans Discord, visualiseur
   ptt.js        branchement du PTT global sur le moteur vocal de Discord
   brand.js      logo et nom Plume à la place de ceux de Discord
@@ -230,4 +233,4 @@ Plume n'est ni affilié à Discord Inc. ni approuvé par Discord. Il affiche le 
 
 ## Licence
 
-[GPL-3.0](LICENSE). Nightcord et Equicord sont distribués sous leur propre licence et téléchargés depuis leurs releases officielles ; ils ne sont pas inclus dans ce dépôt.
+[GPL-3.0](LICENSE). RNNoise et son module WebAudio sont inclus sous leurs licences (BSD, MIT, Apache-2.0), voir [`vendor/rnnoise`](vendor/rnnoise). Nightcord et Equicord sont distribués sous leur propre licence et téléchargés depuis leurs releases officielles ; ils ne sont pas inclus dans ce dépôt.

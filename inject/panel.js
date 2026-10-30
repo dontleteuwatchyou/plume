@@ -12,6 +12,13 @@
         studio: { label: "Studio",  sub: "320 kb/s", v: { bitrate: 320000, stereo: true,  frameMs: 20, cbr: true,  fec: false, dtx: false } },
         max:    { label: "Maximum", sub: "510 kb/s", v: { bitrate: 510000, stereo: true,  frameMs: 20, cbr: true,  fec: false, dtx: false } },
     };
+    const EQ_LABELS = ["Grave · 120 Hz", "Bas-médium · 400 Hz", "Médium · 1,5 kHz", "Présence · 4 kHz", "Air · 10 kHz"];
+    const EQ_PRESETS = {
+        neutre:    { label: "Neutre",       highpass: 0,   bands: [0, 0, 0, 0, 0] },
+        claire:    { label: "Voix claire",  highpass: 80,  bands: [-2, -2, 0, 3, 2] },
+        broadcast: { label: "Radio",        highpass: 100, bands: [3, -3, 0, 2, 3] },
+        chaude:    { label: "Chaleureuse",  highpass: 60,  bands: [3, 1, -1, -1, -2] },
+    };
     const MEMORY = [
         ["standard", "Standard", "Réglages d'origine du moteur."],
         ["reduced", "Réduite", "Environ 120 Mo de moins. Aucune contrepartie visible."],
@@ -67,6 +74,7 @@ h4 { font-size: 12px; text-transform: uppercase; color: var(--text-muted, #949ba
 .presets button[aria-pressed="true"] { border-color: var(--plume, #8b7cf6); background: #8b7cf622; }
 .slider { display: flex; align-items: center; gap: 14px; padding: 6px 0 14px; border-bottom: 1px solid var(--border-subtle, #ffffff14); }
 input[type=range] { flex: 1; accent-color: var(--plume, #8b7cf6); }
+input[type=range]:disabled { opacity: .4; }
 .val { font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; font-weight: 600; color: var(--header-primary, #f2f3f5); }
 .note { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; background: #8b7cf61a; color: #c4baff; }
 .note.warn { background: #f0b2321a; color: #f5c96a; display: none; }
@@ -111,6 +119,14 @@ canvas { width: 100%; display: block; border-radius: 8px; background: var(--back
 <div class="row" style="border:0;padding-bottom:4px"><div><div class="t">Gain du micro <span class="tag live">en direct</span></div><div class="d">Jusqu'à 800 % (+18 dB), bien au-delà de Discord.</div></div></div>
 <div class="slider"><input type="range" id="gain" min="0" max="800" step="5" aria-label="Gain en pourcentage"><span class="val" id="gainVal"></span></div>
 ${toggle("limiter", "Limiteur", "Empêche la saturation quand le gain est poussé. À garder actif au-delà de 100 %.", "live")}
+<h4>Nettoyage</h4>
+${toggle("rnnoise", "Suppression de bruit RNNoise", "Retire clavier, ventilo et souffle sans abîmer la voix. Tourne sur ton PC, ajoute ~20 ms de latence. Coupe celle de Discord si tu l'actives.", "live")}
+<h4>Égaliseur</h4>
+<div class="row"><div><div class="t">Activer l'égaliseur <span class="tag live">en direct</span></div><div class="d">Coupe-bas et 5 bandes, de −12 à +12 dB.</div></div><label class="sw"><input type="checkbox" id="eqOn"><span></span></label></div>
+<div class="presets" style="margin-top:12px">${Object.entries(EQ_PRESETS).map(([id, p]) => `<button data-eqp="${id}"><b>${p.label}</b></button>`).join("")}</div>
+<div class="row"><div><div class="t">Coupe-bas</div><div class="d">Retire les grondements (bureau, souffle de clim, coups sur le micro).</div></div>
+<div class="seg" id="hp">${[0, 60, 80, 100, 150].map(v => `<button data-v="${v}">${v ? v + " Hz" : "Coupé"}</button>`).join("")}</div></div>
+${EQ_LABELS.map((l, i) => `<div class="row" style="padding:8px 0"><div class="t" style="min-width:170px;font-weight:500">${l}</div><input type="range" data-band="${i}" min="-12" max="12" step="0.5" aria-label="${l}"><span class="val" style="min-width:70px" data-bandval="${i}"></span></div>`).join("")}
 <h4>Qualité</h4>
 <div class="row" style="border:0;padding-bottom:4px"><div><div class="t">Débit Opus <span class="tag live">en direct</span></div><div class="d">Jusqu'à 510 kb/s, le maximum du format.</div></div></div>
 <div class="slider"><input type="range" id="bitrate" min="32" max="510" step="2" aria-label="Débit en kb/s"><span class="val" id="bitrateVal"></span></div>
@@ -180,6 +196,12 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         if ($("#gain")) { $("#gain").value = Math.round(a.gain * 100); const db = a.gain > 0 ? 20 * Math.log10(a.gain) : -Infinity; $("#gainVal").textContent = `${Math.round(a.gain * 100)} % (${db === -Infinity ? "muet" : `${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`})`; }
         if ($("#bitrate")) { $("#bitrate").value = a.bitrate / 1000; $("#bitrateVal").textContent = kbps(a.bitrate); }
         root.querySelectorAll("#frame button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === a.frameMs));
+        const eq = a.eq;
+        if ($("#eqOn")) $("#eqOn").checked = eq.enabled;
+        root.querySelectorAll("#hp button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === eq.highpass));
+        root.querySelectorAll("[data-band]").forEach(r => { r.value = eq.bands[+r.dataset.band]; r.disabled = !eq.enabled; });
+        root.querySelectorAll("[data-bandval]").forEach(v => { const x = eq.bands[+v.dataset.bandval]; v.textContent = `${x > 0 ? "+" : ""}${x.toFixed(1)} dB`; });
+        root.querySelectorAll("[data-eqp]").forEach(b => { const p = EQ_PRESETS[b.dataset.eqp]; b.setAttribute("aria-pressed", eq.enabled && p.highpass === eq.highpass && p.bands.every((v, i) => v === eq.bands[i])); });
         root.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", Object.entries(PRESETS[b.dataset.preset].v).every(([k, v]) => a[k] === v)));
         root.querySelectorAll("[data-mod]").forEach(l => { const on = l.dataset.mod === cfg.mod; l.classList.toggle("sel", on); l.querySelector("input").checked = on; });
         root.querySelectorAll("[data-mem]").forEach(l => { const on = l.dataset.mem === cfg.memory; l.classList.toggle("sel", on); l.querySelector("input").checked = on; });
@@ -205,6 +227,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         page.addEventListener("input", e => {
             if (e.target.id === "gain") { cfg.audio.gain = +e.target.value / 100; save(150); }
             if (e.target.id === "bitrate") { cfg.audio.bitrate = +e.target.value * 1000; save(400); }
+            if (e.target.dataset?.band) { cfg.audio.eq.bands[+e.target.dataset.band] = +e.target.value; save(150); }
         });
         page.addEventListener("change", e => {
             const k = e.target.dataset?.k;
@@ -215,6 +238,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
                 if (confirm("Plume va redémarrer pour appliquer ce réglage. Continuer ?")) { cfg.memory = e.target.value; save(0); }
                 else render();
             }
+            if (e.target.id === "eqOn") { cfg.audio.eq.enabled = e.target.checked; save(); }
             if (e.target.id === "monitor") { const c = plumeStereo.activeChain(); if (c) plumeStereo.setMonitor(c, e.target.checked); }
         });
         page.addEventListener("click", e => {
@@ -222,6 +246,8 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
             if (!b) return;
             if (b.dataset.preset) { Object.assign(cfg.audio, PRESETS[b.dataset.preset].v, { echoCancellation: false, noiseSuppression: false, autoGainControl: false }); save(0); }
             if (b.parentElement?.id === "frame") { cfg.audio.frameMs = +b.dataset.v; save(); }
+            if (b.parentElement?.id === "hp") { cfg.audio.eq.highpass = +b.dataset.v; save(); }
+            if (b.dataset.eqp) { const p = EQ_PRESETS[b.dataset.eqp]; Object.assign(cfg.audio.eq, { enabled: true, highpass: p.highpass, bands: [...p.bands] }); save(0); }
             if (b.id === "micTest") toggleMicTest();
             if (b.id === "selfTest") runSelfTest(b);
         });

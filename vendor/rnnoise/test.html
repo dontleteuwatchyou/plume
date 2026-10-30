@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Test RNNoise</title>
+<pre id="out">en cours…</pre>
+<script type="module">
+// Banc d'essai local de vendor/rnnoise : rend 4 s hors temps réel à travers le
+// même processeur que Plume et compare l'énergie avant/après.
+const RN_ID = "@sapphi-red/web-noise-suppressor/rnnoise";
+const wasm = await (await fetch("rnnoise_simd.wasm")).arrayBuffer();
+
+async function run(makeInput, withRn) {
+  const sr = 48000, len = sr * 4;
+  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: len, sampleRate: sr });
+  await ctx.audioWorklet.addModule("worklet.js");
+  const buf = ctx.createBuffer(2, len, sr);
+  makeInput(buf, sr);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  let node = src;
+  if (withRn) {
+    const rn = new AudioWorkletNode(ctx, RN_ID, { channelCount: 2, channelCountMode: "explicit", outputChannelCount: [2], processorOptions: { maxChannels: 2, wasmBinary: wasm.slice(0) } });
+    src.connect(rn); node = rn;
+  }
+  node.connect(ctx.destination);
+  src.start();
+  // Le processeur charge RNNoise de façon asynchrone : on suspend le rendu
+  // au premier bloc, le temps qu'il soit prêt (en temps réel, ce délai passe inaperçu).
+  ctx.suspend(128 / sr).then(() => setTimeout(() => ctx.resume(), 800));
+  const out = await ctx.startRendering();
+  const rms = ch => { const d = out.getChannelData(ch).subarray(sr, len); let s = 0; for (const v of d) s += v * v; return Math.sqrt(s / d.length); };
+  return [rms(0), rms(1)];
+}
+const db = x => (20 * Math.log10(x)).toFixed(1) + " dB";
+const noise = (buf) => { for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.1; } };
+// « Voix » synthétique : harmoniques d'une fondamentale à 140 Hz, modulées en syllabes (4 Hz).
+const voice = (buf, sr) => { for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const t = i / sr; let v = 0; for (let h = 1; h <= 20; h++) v += Math.sin(2 * Math.PI * 140 * h * t) / h; d[i] = 0.12 * v * (0.5 + 0.5 * Math.sin(2 * Math.PI * 4 * t)) ** 2; } } };
+
+const r = {};
+for (const [name, fn] of [["bruit", noise], ["voix", voice]]) {
+  const [a] = await run(fn, false), [b] = await run(fn, true);
+  r[name] = { avant: db(a), apres: db(b), ecart: (20 * Math.log10(b / a)).toFixed(1) + " dB" };
+}
+document.getElementById("out").textContent = JSON.stringify(r, null, 2);
+window.result = r;
+</script>

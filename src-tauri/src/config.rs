@@ -77,6 +77,26 @@ pub struct Audio {
     pub auto_gain_control: bool,
     /// Priorité réseau haute pour l'audio.
     pub high_priority: bool,
+    /// Suppression de bruit RNNoise (WebAssembly), avant le reste de la chaîne.
+    pub rnnoise: bool,
+    pub eq: Eq,
+}
+
+/// Égaliseur du micro : passe-haut + 5 bandes, en dB.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Eq {
+    pub enabled: bool,
+    /// Fréquence du passe-haut en Hz ; 0 = coupé.
+    pub highpass: u32,
+    /// Grave 120 Hz, bas-médium 400 Hz, médium 1,5 kHz, présence 4 kHz, air 10 kHz.
+    pub bands: [f32; 5],
+}
+
+impl Default for Eq {
+    fn default() -> Self {
+        Self { enabled: false, highpass: 80, bands: [0.0; 5] }
+    }
 }
 
 impl Default for Config {
@@ -106,6 +126,8 @@ impl Default for Audio {
             noise_suppression: false,
             auto_gain_control: false,
             high_priority: true,
+            rnnoise: false,
+            eq: Eq::default(),
         }
     }
 }
@@ -120,6 +142,10 @@ impl Config {
         let a = &mut self.audio;
         a.bitrate = a.bitrate.clamp(6_000, 510_000);
         a.gain = if a.gain.is_finite() { a.gain.clamp(0.0, 8.0) } else { 1.0 };
+        a.eq.highpass = a.eq.highpass.min(400);
+        for b in &mut a.eq.bands {
+            *b = if b.is_finite() { b.clamp(-15.0, 15.0) } else { 0.0 };
+        }
         if ![10, 20, 40, 60].contains(&a.frame_ms) {
             a.frame_ms = 20;
         }

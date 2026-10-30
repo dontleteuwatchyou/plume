@@ -94,11 +94,40 @@
     const peers = new Set();
     const mics = new Set();
 
-    // ---- Gain + limiteur ---------------------------------------------------
-    // Le micro passe par WebAudio : gain (jusqu'à 800 %), limiteur, puis la
-    // piste envoyée à Discord. Les analyseurs gauche/droite branchés en sortie
-    // alimentent le visualiseur : ils voient exactement ce qui part.
+    // ---- Chaîne du micro ---------------------------------------------------
+    // Le micro passe par WebAudio, puis part vers Discord :
+    //   source → [RNNoise] → égaliseur → gain → [limiteur → écrêteur] → piste
+    // Les analyseurs gauche/droite branchés en sortie alimentent le
+    // visualiseur : ils voient exactement ce qui part.
     const chains = new Set();
+
+    // Égaliseur : passe-haut puis 5 bandes (type, fréquence).
+    const EQ_BANDS = [["lowshelf", 120], ["peaking", 400], ["peaking", 1500], ["peaking", 4000], ["highshelf", 10000]];
+    function applyEq(c) {
+        const eq = A.eq || {};
+        const t = c.ctx.currentTime;
+        // Passe-haut « coupé » = 10 Hz, inaudible.
+        c.hp.frequency.setTargetAtTime(eq.enabled && eq.highpass ? eq.highpass : 10, t, 0.02);
+        c.bands.forEach((b, i) => b.gain.setTargetAtTime(eq.enabled ? eq.bands?.[i] || 0 : 0, t, 0.02));
+    }
+
+    // RNNoise : chargé une seule fois depuis Plume, à la première activation.
+    const RN_ID = "@sapphi-red/web-noise-suppressor/rnnoise";
+    let rnAssets;
+    async function ensureRnnoise(c) {
+        if (c.rn) return c.rn;
+        rnAssets ||= Promise.all([invoke("rnnoise_worklet"), invoke("rnnoise_wasm")])
+            .then(([js, wasm]) => ({ url: URL.createObjectURL(new Blob([js], { type: "text/javascript" })), wasm }));
+        const { url, wasm } = await rnAssets;
+        await c.ctx.audioWorklet.addModule(url);
+        c.rn = new AudioWorkletNode(c.ctx, RN_ID, {
+            channelCount: c.channels,
+            channelCountMode: "explicit",
+            outputChannelCount: [c.channels],
+            processorOptions: { maxChannels: c.channels, wasmBinary: wasm.slice(0) },
+        });
+        return c.rn;
+    }
 
     // Écrêteur de sécurité après le compresseur (trop lent pour arrêter seul
     // les crêtes) : fidèle jusqu'à -0,4 dBFS, puis arrondi jusqu'au plafond de
@@ -114,6 +143,10 @@
     })();
 
     function wire(c) {
+        c.src.disconnect();
+        c.rn?.disconnect();
+        if (A.rnnoise && c.rn) { c.src.connect(c.rn); c.rn.connect(c.hp); }
+        else c.src.connect(c.hp);
         c.gain.disconnect();
         c.limiter.disconnect();
         c.clipper.disconnect();
@@ -143,8 +176,19 @@
         const clipper = ctx.createWaveShaper();
         clipper.curve = CLIP;
         clipper.oversample = "4x";
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.Q.value = 0.707;
+        const bands = EQ_BANDS.map(([type, f]) => {
+            const b = ctx.createBiquadFilter();
+            b.type = type;
+            b.frequency.value = f;
+            b.Q.value = 1;
+            return b;
+        });
+        [hp, ...bands].reduce((a, b) => (a.connect(b), b)).connect(gain);
         const dest = ctx.createMediaStreamDestination();
-        for (const n of [gain, limiter, clipper, dest]) {
+        for (const n of [hp, ...bands, gain, limiter, clipper, dest]) {
             n.channelCount = channels;
             n.channelCountMode = "explicit";
             n.channelInterpretation = "speakers";
@@ -157,9 +201,10 @@
             split.connect(an, i);
             return an;
         });
-        src.connect(gain);
-        const c = { ctx, input, gain, limiter, clipper, dest, split, analysers, channels };
+        const c = { ctx, input, src, hp, bands, gain, limiter, clipper, dest, split, analysers, channels };
+        applyEq(c);
         wire(c);
+        if (A.rnnoise) ensureRnnoise(c).then(() => wire(c)).catch(e => log("RNNoise indisponible", e));
 
         // La piste rendue à Discord se présente comme le micro d'origine.
         const out = dest.stream.getAudioTracks()[0];
@@ -272,7 +317,9 @@
         A = { ...next };
         for (const c of chains) {
             c.gain.gain.setTargetAtTime(A.gain ?? 1, c.ctx.currentTime, 0.02);
+            applyEq(c);
             wire(c);
+            if (A.rnnoise && !c.rn) ensureRnnoise(c).then(() => wire(c)).catch(e => log("RNNoise indisponible", e));
         }
         for (const t of mics) {
             if (t.readyState === "ended") { mics.delete(t); continue; }
