@@ -99,6 +99,8 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
         include_str!("../../inject/shim.js").to_string(),
         include_str!("../../inject/stereo.js").to_string(),
         include_str!("../../inject/ptt.js").to_string(),
+        format!("window.__PLUME_THEME_CSS__ = {};", serde_json::to_string(include_str!("../../inject/theme.css")).unwrap()),
+        include_str!("../../inject/theme.js").to_string(),
         include_str!("../../inject/brand.js").to_string(),
         include_str!("../../inject/titlebar.js").to_string(),
         include_str!("../../inject/panel.js").to_string(),

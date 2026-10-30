@@ -12,6 +12,8 @@ pub struct Config {
     #[serde(rename = "mod")]
     pub client_mod: ClientMod,
     pub audio: Audio,
+    /// Thème de l'interface : "plume" (par défaut) ou "discord".
+    pub theme: String,
     /// Économie de mémoire du moteur WebView2 (appliquée au redémarrage).
     pub memory: MemoryMode,
     /// Libère la mémoire quand Plume n'est pas au premier plan.
@@ -107,6 +109,7 @@ impl Default for Config {
         Self {
             client_mod: ClientMod::Nightcord,
             audio: Audio::default(),
+            theme: "plume".into(),
             memory: MemoryMode::Reduced,
             trim_in_background: true,
             auto_update: true,
@@ -143,6 +146,9 @@ impl Config {
 
     /// Ramène les valeurs dans ce qu'Opus et WebRTC acceptent.
     pub fn sanitize(&mut self) {
+        if self.theme != "discord" {
+            self.theme = "plume".into();
+        }
         let a = &mut self.audio;
         a.bitrate = a.bitrate.clamp(6_000, 510_000);
         a.gain = if a.gain.is_finite() { a.gain.clamp(0.0, 8.0) } else { 1.0 };

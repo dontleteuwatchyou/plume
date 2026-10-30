@@ -44,7 +44,10 @@ pub fn apply(app: &AppHandle, mut next: Config) {
         crate::restart_main(app);
     } else if let Some(w) = app.get_webview_window(crate::MAIN) {
         let audio = serde_json::to_string(&next.audio).unwrap();
-        let _ = w.eval(format!("window.__plumeApply && window.__plumeApply({audio})"));
+        let theme = serde_json::to_string(&next.theme).unwrap();
+        let _ = w.eval(format!(
+            "window.__plumeApply && window.__plumeApply({audio}); window.__plumeApplyTheme && window.__plumeApplyTheme({theme})"
+        ));
     }
 }
 
