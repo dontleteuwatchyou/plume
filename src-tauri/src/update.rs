@@ -14,21 +14,39 @@ pub struct UpdateInfo {
     available: bool,
     version: Option<String>,
     notes: Option<String>,
+    /// Pourquoi la vérification a échoué, en clair ; `None` si elle a abouti.
+    error: Option<String>,
 }
 
 async fn check(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
     app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())
 }
 
+/// Toujours une réponse (avec la version installée), même si GitHub ne répond
+/// pas : la page Mises à jour affiche alors la raison au lieu d'une erreur brute.
 #[tauri::command]
-pub async fn update_check(app: AppHandle) -> Result<UpdateInfo, String> {
-    let update = check(&app).await?;
-    Ok(UpdateInfo {
-        current: app.package_info().version.to_string(),
-        available: update.is_some(),
-        version: update.as_ref().map(|u| u.version.clone()),
-        notes: update.and_then(|u| u.body),
-    })
+pub async fn update_check(app: AppHandle) -> UpdateInfo {
+    let current = app.package_info().version.to_string();
+    match check(&app).await {
+        Ok(update) => UpdateInfo {
+            current,
+            available: update.is_some(),
+            version: update.as_ref().map(|u| u.version.clone()),
+            notes: update.and_then(|u| u.body),
+            error: None,
+        },
+        Err(e) => UpdateInfo {
+            current,
+            available: false,
+            version: None,
+            notes: None,
+            error: Some(if e.contains("valid release JSON") {
+                "Aucune version avec mise à jour automatique n'est encore publiée (latest.json absent de la dernière release).".into()
+            } else {
+                format!("GitHub injoignable : {e}")
+            }),
+        },
+    }
 }
 
 /// Télécharge, vérifie la signature, lance l'installateur puis redémarre.

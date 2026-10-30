@@ -425,11 +425,11 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         try {
             const u = await invoke("update_check");
             $("#upCur").textContent = u.current;
-            $("#upState").textContent = u.available ? `Plume ${u.version} disponible` : "À jour";
-            $("#upState").className = `v ${u.available ? "" : "good"}`;
+            $("#upState").textContent = u.error ? "Impossible de vérifier" : u.available ? `Plume ${u.version} disponible` : "À jour";
+            $("#upState").className = `v ${u.error ? "bad" : u.available ? "" : "good"}`;
             $("#upInstall").hidden = !u.available;
-            $("#upNotes").hidden = !u.notes;
-            $("#upNotes").textContent = u.notes || "";
+            $("#upNotes").hidden = !(u.error || u.notes);
+            $("#upNotes").textContent = u.error || u.notes || "";
         } catch (e) {
             $("#upState").textContent = "Impossible de vérifier";
             $("#upState").className = "v bad";
