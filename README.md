@@ -45,7 +45,7 @@ Mesurés avec [`scripts/ram.ps1`](scripts/ram.ps1), qui additionne **tous** les 
 | | Discord officiel | Plume |
 |---|---|---|
 | Taille installée | 514 Mo | **5,6 Mo** (+ WebView2, déjà dans Windows) |
-| Mémoire privée, connecté | ~1 750 Mo | **~605 Mo** |
+| Mémoire privée, connecté | ~1 750 Mo | **~540-590 Mo** |
 | Mémoire totale (working set), connecté | ~1 300-1 400 Mo | **~980 Mo** |
 | Mémoire privée, réduit dans la zone de notification | ~1 850 Mo | **~420 à 500 Mo** |
 
@@ -59,8 +59,8 @@ Le gros de la mémoire, c'est Discord lui-même (ses serveurs, membres et messag
 | Économie de mémoire | Mémoire privée mesurée | Contrepartie |
 |---|---|---|
 | Standard | ~700 Mo | — |
-| **Réduite** (défaut) : processus graphique intégré, JavaScript compact | **~605 Mo** | aucune visible |
-| Maximale : sans accélération graphique | ~560 Mo | vidéos et streams sur le processeur |
+| **Réduite** (défaut) : processus graphique intégré, JavaScript compact et allégé | **~540 Mo** caché, ~590 Mo fenêtre ouverte | interface un peu moins rapide dans les très gros serveurs |
+| Maximale : sans accélération graphique | ~520 Mo | vidéos et streams sur le processeur |
 
 Et quand Plume n'est plus au premier plan depuis 20 secondes (en jeu, par exemple), ou réduit dans la zone de notification, il demande à WebView2 de libérer ce qu'il peut (`MemoryUsageTargetLevel = Low`), sans couper ni le vocal ni les notifications.
 
