@@ -36,9 +36,12 @@ img[class*="logoWithText_"] { content: ${svgUrl(wordmark)}; }
 [class^="spinner_"]:has(> video), [class*=" spinner_"]:has(> video) {
     width: 120px; height: 120px; margin: 40px auto;
     background: ${svgUrl(badge)} center / contain no-repeat;
-    animation: plume-pulse 1.6s ease-in-out infinite;
+    border-radius: 28px;
+    /* Même mouvement que l'écran de démarrage (dist/splash.html). */
+    animation: plume-float 3.2s ease-in-out infinite, plume-glow 2.4s ease-in-out infinite;
 }
-@keyframes plume-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.88); opacity: .75; } }
+@keyframes plume-float { 0%, 100% { transform: translateY(4px) rotate(-3deg); } 50% { transform: translateY(-8px) rotate(3deg); } }
+@keyframes plume-glow { 0%, 100% { box-shadow: 0 10px 30px rgb(76 63 184 / .35); } 50% { box-shadow: 0 14px 50px rgb(139 124 246 / .6); } }
 `;
 
     // Icône Clyde en SVG : on masque son tracé et on ajoute la plume à côté,

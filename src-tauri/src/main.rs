@@ -21,10 +21,23 @@ use tauri_plugin_window_state::StateFlags;
 use config::Config;
 use mods::ClientMod;
 
-const DISCORD_URL: &str = "https://discord.com/app";
+pub(crate) const DISCORD_URL: &str = "https://discord.com/app";
 pub const MAIN: &str = "main";
 
 /// Hôtes que la fenêtre a le droit d'afficher. Tout le reste part dans le navigateur.
+/// Pages de Plume lui-même (l'écran de démarrage `splash.html`).
+pub(crate) const SPLASH_URL: &str = "http://tauri.localhost/splash.html";
+
+fn is_local(url: &Url) -> bool {
+    url.host_str() == Some("tauri.localhost") || url.scheme() == "tauri"
+}
+
+/// Texte d'étape sur l'écran de démarrage (sans effet une fois sur Discord).
+pub(crate) fn splash_status(w: &WebviewWindow, text: &str) {
+    let text = serde_json::to_string(text).unwrap();
+    let _ = w.eval(format!("window.plumeSplash && window.plumeSplash.status({text})"));
+}
+
 fn is_discord(url: &Url) -> bool {
     match url.scheme() {
         "about" | "blob" | "data" => return true,
@@ -111,9 +124,9 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
     let nav_app = app.clone();
     let popup_app = app.clone();
     // Page vide d'abord : Discord ne se charge qu'une fois le mod installé.
-    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::External("about:blank".parse().unwrap()))
+    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("splash.html".into()))
         .title("Plume")
-        .background_color(Color(0x1a, 0x1a, 0x1e, 0xff))
+        .background_color(Color(0x0e, 0x0c, 0x16, 0xff))
         .browser_extensions_enabled(true)
         .additional_browser_args(&cfg.memory.browser_args())
         .inner_size(1280.0, 800.0)
@@ -123,7 +136,7 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
         .decorations(false)
         .disable_drag_drop_handler()
         .on_navigation(move |url| {
-            if is_discord(url) {
+            if is_discord(url) || is_local(url) {
                 return true;
             }
             open_external(&nav_app, url.as_str());
@@ -147,10 +160,16 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
 fn load_discord(app: &AppHandle, w: &WebviewWindow, m: ClientMod) {
     let (app, w) = (app.clone(), w.clone());
     std::thread::spawn(move || {
+        // Laisse l'écran de démarrage se charger avant d'y écrire.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        if m != ClientMod::None {
+            splash_status(&w, &format!("Chargement de {}", m.label()));
+        }
         let folder = mods::prepare(&app, m);
         let _ = app.run_on_main_thread(move || {
             let target = w.clone();
             native::install_extension(&w, folder, move || {
+                splash_status(&target, "Connexion à Discord");
                 let _ = target.navigate(DISCORD_URL.parse().unwrap());
             });
         });

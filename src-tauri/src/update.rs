@@ -50,10 +50,50 @@ pub async fn update_check(app: AppHandle) -> UpdateInfo {
 }
 
 /// Télécharge, vérifie la signature, lance l'installateur puis redémarre.
+/// Pendant ce temps, la fenêtre affiche l'écran Plume avec la progression.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
     let update = check(&app).await?.ok_or("Plume est déjà à jour")?;
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    let w = app.get_webview_window(crate::MAIN);
+    if let Some(w) = &w {
+        if let Ok(url) = format!("{}?update={}", crate::SPLASH_URL, update.version).parse() {
+            let _ = w.navigate(url);
+        }
+    }
+    let (mut done, mut shown) = (0u64, 0u64);
+    let progress = w.clone();
+    let finished = w.clone();
+    let result = update
+        .download_and_install(
+            move |chunk, total| {
+                done += chunk as u64;
+                let Some(w) = &progress else { return };
+                // Une mise à jour d'écran par pour-cent, pas une par paquet réseau.
+                let pct = total.map(|t| done * 100 / t.max(1)).unwrap_or(0);
+                if pct != shown || total.is_none() {
+                    shown = pct;
+                    let script = match total {
+                        Some(_) => format!("window.plumeSplash && (plumeSplash.status('Téléchargement de la mise à jour — {pct} %', false), plumeSplash.progress({}))", pct as f64 / 100.0),
+                        None => "window.plumeSplash && plumeSplash.progress(null)".into(),
+                    };
+                    let _ = w.eval(script);
+                }
+            },
+            move || {
+                if let Some(w) = &finished {
+                    crate::splash_status(w, "Installation");
+                    let _ = w.eval("window.plumeSplash && plumeSplash.progress(null)");
+                }
+            },
+        )
+        .await;
+    if let Err(e) = result {
+        // Échec : on rend Discord à l'utilisateur.
+        if let Some(w) = &w {
+            let _ = w.navigate(crate::DISCORD_URL.parse().unwrap());
+        }
+        return Err(e.to_string());
+    }
     app.restart();
 }
 
