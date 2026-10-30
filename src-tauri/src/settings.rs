@@ -41,7 +41,7 @@ pub fn apply(app: &AppHandle, mut next: Config) {
     }
     if next.client_mod != previous.client_mod {
         mods::refresh_in_background(app.clone(), next.client_mod);
-        crate::restart_main(app);
+        crate::reload_discord(app);
     } else if let Some(w) = app.get_webview_window(crate::MAIN) {
         let audio = serde_json::to_string(&next.audio).unwrap();
         let theme = serde_json::to_string(&next.theme).unwrap();

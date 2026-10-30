@@ -213,7 +213,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             match id {
                 "show" => return show_main(app),
                 "settings" => return settings::open(app),
-                "reload" => return restart_main(app),
+                "reload" => return reload_discord(app),
                 "quit" => return app.exit(0),
                 "stereo" => cfg.audio.stereo = !cfg.audio.stereo,
                 _ => match ClientMod::ALL.into_iter().find(|m| id == format!("mod:{}", m.id())) {
@@ -249,34 +249,16 @@ fn background_trim(app: &AppHandle, focused: bool) {
     });
 }
 
-pub(crate) fn restart_main(app: &AppHandle) {
-    let app = app.clone();
-    // Hors du gestionnaire d'événement, sinon la destruction bloque la boucle.
-    std::thread::spawn(move || {
-        let mut visible = true;
-        if let Some(w) = app.get_webview_window(MAIN) {
-            visible = w.is_visible().unwrap_or(true);
-            let _ = w.destroy();
-        }
-        // La destruction est asynchrone : attendre que le libellé soit libre.
-        for _ in 0..100 {
-            if app.get_webview_window(MAIN).is_none() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        let cfg = settings::current(&app);
-        let a = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if let Ok(w) = build_main(&a, &cfg) {
-                if visible {
-                    let _ = w.show();
-                } else {
-                    native::set_memory_low(&w, true);
-                }
-            }
-        });
-    });
+/// Recharge Discord dans la même fenêtre : écran Plume, (ré)installation du
+/// mod choisi, puis Discord. Sert au changement de mod et à « Recharger ».
+/// On ne détruit jamais la fenêtre : un nouveau moteur WebView2 lancé pendant
+/// que l'ancien se ferme échoue, et il n'y avait alors plus de fenêtre du tout.
+pub(crate) fn reload_discord(app: &AppHandle) {
+    let Some(w) = app.get_webview_window(MAIN) else { return };
+    if let Ok(url) = SPLASH_URL.parse() {
+        let _ = w.navigate(url);
+    }
+    load_discord(app, &w, settings::current(app).client_mod);
 }
 
 fn main() {
