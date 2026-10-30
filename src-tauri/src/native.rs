@@ -12,7 +12,7 @@ mod win {
 
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     use webview2_com::{
-        take_pwstr, BrowserExtensionRemoveCompletedHandler, PermissionRequestedEventHandler,
+        take_pwstr, BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, PermissionRequestedEventHandler,
         ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
     };
     use windows::core::{Interface, HSTRING, PWSTR};
@@ -86,9 +86,11 @@ mod win {
         }
     }
 
-    /// Retire toutes les extensions du profil, installe `folder` (s'il y en a
-    /// un), puis appelle `then`. Réinstaller à chaque lancement applique les
-    /// mises à jour du mod et le changement de mod.
+    /// Met le profil en phase avec le mod voulu : garde l'extension de
+    /// `folder` si elle est déjà installée (réactivée au besoin), retire toutes
+    /// les autres, et n'installe `folder` que s'il manque. Puis appelle `then`.
+    /// Une même extension n'est donc jamais retirée puis réinstallée d'un coup,
+    /// ce que WebView2 refuse parfois (0x80004005).
     pub fn install_extension(core: &ICoreWebView2, folder: Option<PathBuf>, then: Box<dyn FnOnce() + Send>) {
         let done: Done = Arc::new(Mutex::new(Some(then)));
         let profile = core
@@ -96,32 +98,57 @@ mod win {
             .and_then(|c| unsafe { c.Profile() })
             .and_then(|p| p.cast::<ICoreWebView2Profile7>());
         let Ok(profile) = profile else { return finish(&done) };
+        let wanted = folder.as_deref().map(crate::mods::extension_id);
 
         let (p, d) = (profile.clone(), done.clone());
         let handler = ProfileGetBrowserExtensionsCompletedHandler::create(Box::new(move |_, list| {
-            let mut installed = Vec::new();
+            let mut keep = None;
+            let mut stale = Vec::new();
             if let Some(list) = list {
                 let mut count = 0u32;
                 unsafe {
                     let _ = list.Count(&mut count);
                     for i in 0..count {
-                        if let Ok(ext) = list.GetValueAtIndex(i) {
-                            installed.push(ext);
-                        }
+                        let Ok(ext) = list.GetValueAtIndex(i) else { continue };
+                        let mut id = PWSTR::null();
+                        let id = ext.Id(&mut id).map(|_| take_pwstr(id)).unwrap_or_default();
+                        if Some(&id) == wanted.as_ref() { keep = Some(ext) } else { stale.push(ext) }
                     }
                 }
             }
-            if installed.is_empty() {
-                add(&p, folder.as_ref(), &d);
+            // Ce qui reste à faire une fois les anciennes extensions retirées.
+            let (p2, d2, f2) = (p.clone(), d.clone(), folder.clone());
+            let next = move || match keep {
+                Some(ext) => unsafe {
+                    let mut on = windows::core::BOOL::default();
+                    let _ = ext.IsEnabled(&mut on);
+                    if on.as_bool() {
+                        return finish(&d2);
+                    }
+                    let d3 = d2.clone();
+                    let enabled = BrowserExtensionEnableCompletedHandler::create(Box::new(move |_| {
+                        finish(&d3);
+                        Ok(())
+                    }));
+                    if ext.Enable(true, &enabled).is_err() {
+                        finish(&d2);
+                    }
+                },
+                None => add(&p2, f2.as_ref(), &d2),
+            };
+            if stale.is_empty() {
+                next();
                 return Ok(());
             }
-            // On n'ajoute qu'une fois toutes les suppressions terminées.
-            let pending = Arc::new(AtomicUsize::new(installed.len()));
-            for ext in installed {
-                let (p, d, f, pending) = (p.clone(), d.clone(), folder.clone(), pending.clone());
+            let pending = Arc::new(AtomicUsize::new(stale.len()));
+            let next = Arc::new(Mutex::new(Some(next)));
+            for ext in stale {
+                let (pending, next) = (pending.clone(), next.clone());
                 let removed = BrowserExtensionRemoveCompletedHandler::create(Box::new(move |_| {
                     if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
-                        add(&p, f.as_ref(), &d);
+                        if let Some(f) = next.lock().unwrap().take() {
+                            f();
+                        }
                     }
                     Ok(())
                 }));
