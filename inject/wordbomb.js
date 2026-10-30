@@ -24,11 +24,22 @@
     // compare et on tape sans accent, comme le fait le plugin d'origine.
     const fold = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/œ/g, "oe").replace(/æ/g, "ae").toLowerCase();
 
+    // Réglages du plugin d'origine, mêmes clés : vitesse (lettres/s) et
+    // probabilité d'erreur par mot.
+    const getNum = (key, def) => {
+        const raw = localStorage.getItem(key);
+        const v = Number(raw);
+        return raw !== null && Number.isFinite(v) ? v : def;
+    };
+    let lps = getNum("wb_lps", 50);
+    let humanChance = getNum("wb_humanChance", 0);
+
     let dict = null;
     let loading = null;
     let alphabet = ALPHA.slice();
     let used = new Set();
     let history = [];
+    let busy = false;
     let host = null;
     let $ = {};
 
@@ -44,9 +55,9 @@
 .head button { margin-left: auto; border: 0; background: none; color: #fff; font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; border-radius: 4px; }
 .head button:hover { background: rgb(255 255 255 / .2); }
 .body { padding: 10px 12px 12px; }
-input { width: 100%; box-sizing: border-box; border: 0; border-radius: 8px; padding: 9px 10px; font: inherit; color: var(--text-normal, #dbdee1);
+input[type="text"] { width: 100%; box-sizing: border-box; border: 0; border-radius: 8px; padding: 9px 10px; font: inherit; color: var(--text-normal, #dbdee1);
   background: var(--background-base-lower, #1a1b1e); outline: 2px solid transparent; }
-input:focus { outline-color: var(--plume, #8b7cf6); }
+input[type="text"]:focus { outline-color: var(--plume, #8b7cf6); }
 .words { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 0; }
 .words button { border: 0; border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 13.5px; cursor: pointer; color: #fff;
   background: var(--background-modifier-selected, #ffffff1f); }
@@ -55,21 +66,31 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
 .track { display: flex; flex-wrap: wrap; gap: 3px; margin: 10px 0 0; font: 700 11px/1 ui-monospace, Consolas, monospace; }
 .track span { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 4px; background: var(--background-base-lower, #1a1b1e); color: var(--text-muted, #949ba4); }
 .track span.on { background: #8b7cf633; color: #c4baff; }
+.set { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border-subtle, #ffffff1f); }
+.set[hidden] { display: none; }
+.set label { display: block; font-size: 12px; color: var(--text-muted, #949ba4); margin-bottom: 8px; }
+.set label:last-child { margin-bottom: 0; }
+.set b { color: var(--text-normal, #dbdee1); font-weight: 600; }
+.set input[type="range"] { width: 100%; margin: 4px 0 0; accent-color: var(--plume, #8b7cf6); }
 .foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: var(--text-muted, #949ba4); font-size: 12px; }
 .foot span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot button { border: 0; border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; color: var(--interactive-normal, #b5bac1); background: var(--background-base-lower, #1a1b1e); }
-.foot button:hover { color: #fff; background: var(--background-modifier-hover, #ffffff14); }
+.foot button:hover, .foot button[aria-pressed="true"] { color: #fff; background: var(--background-modifier-hover, #ffffff14); }
 `;
 
-    // L'Activity est une iframe cross-origin : on clique au centre bas, là où
-    // se trouve le champ de saisie du jeu. Aucun repli sur le chat Discord :
-    // taper un mot puis Entrée y enverrait un message.
+    // L'Activity est une iframe cross-origin. Discord en pose plusieurs (aperçu
+    // dans le salon vocal, panneau principal) : on prend la plus grande, sinon
+    // le clic atterrit sur l'avatar du salon et ouvre un profil.
     function target() {
-        const frame = document.querySelector("iframe[src*='discordsays.com'], iframe[src*='activity']");
-        if (!frame) return null;
-        const r = frame.getBoundingClientRect();
-        if (r.width < 50 || r.height < 50) return null;
-        return { x: r.left + r.width / 2, y: r.top + r.height * 0.8 };
+        let best = null;
+        for (const f of document.querySelectorAll("iframe[src*='discordsays.com'], iframe[src*='activity']")) {
+            const r = f.getBoundingClientRect();
+            if (r.width < 200 || r.height < 200) continue;
+            if (!best || r.width * r.height > best.width * best.height) best = r;
+        }
+        if (!best) return null;
+        // Le champ du jeu est en bas au centre.
+        return { x: best.left + best.width / 2, y: best.top + best.height * 0.9 };
     }
 
     function load() {
@@ -112,13 +133,39 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
         return found.slice(0, 8).map(x => x.w);
     }
 
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+
+    // La frappe est découpée en une commande par touche : c'est la page qui
+    // donne le rythme (vitesse réglable, jitter, fautes), pas Rust.
     async function send(word) {
+        if (busy) return;
         const at = target();
         if (!at) return status("Ouvre le jeu (Activity) d'abord");
-        status(`Frappe : ${word}`);
+        busy = true;
+        const { x, y } = at;
+        const delay = Math.max(12, 1000 / lps);
+        const type = t => invoke("wordbomb_type", { text: t, x, y, click: false });
         try {
-            await invoke("wordbomb_type", { text: word, x: Math.round(at.x), y: Math.round(at.y) });
+            status(`Frappe : ${word}`);
+            await invoke("wordbomb_type", { text: "", x, y, click: true });
+            const typo = humanChance > 0 && Math.random() * 100 < humanChance
+                ? 1 + Math.floor(Math.random() * Math.max(1, word.length - 2))
+                : -1;
+            for (let i = 0; i < word.length; i++) {
+                if (i === typo) {
+                    await type(ALPHA[Math.floor(Math.random() * 26)]);
+                    await wait(delay * (1.2 + Math.random()));
+                    await type("\b");
+                    await wait(delay * (1.2 + Math.random()));
+                }
+                await type(word[i]);
+                // ±25 % : un rythme parfaitement régulier se voit.
+                await wait(delay * (0.75 + Math.random() * 0.5));
+            }
+            await wait(delay * (0.8 + Math.random() * 0.6));
+            await type("\n");
         } catch {
+            busy = false;
             return status("Frappe impossible");
         }
         history.push({ word, before: alphabet.slice() });
@@ -128,7 +175,9 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
         $.input.value = "";
         draw();
         status("Envoyé");
-        $.input.focus();
+        busy = false;
+        focusInput();
+        setTimeout(focusInput, 250);
     }
 
     function undo() {
@@ -164,12 +213,29 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
         }
     }
 
+    // Entrée envoie directement le meilleur mot : plus besoin de cliquer dessus.
     function search() {
         const words = suggest($.input.value);
         if (!words.length) return status($.input.value.trim() ? "Aucun mot" : "Entre la syllabe");
-        if (words.length === 1) return send(words[0]);
-        draw();
-        status(`${words.length} mots`);
+        send(words[0]);
+    }
+
+    function focusInput() {
+        if ($.input && !$.panel.hidden) $.input.focus({ preventScroll: true });
+    }
+
+    function setting(k, value) {
+        if (k === "lps") lps = value;
+        else humanChance = value;
+        localStorage.setItem(`wb_${k}`, String(value));
+        $.set.querySelectorAll("[data-k]").forEach(i => {
+            if (i.dataset.k === k) i.closest("label").querySelector("b").textContent = value;
+        });
+        syncLabel();
+    }
+
+    function syncLabel() {
+        if ($.rate) $.rate.textContent = `${lps} l/s · ${humanChance} %`;
     }
 
     function mount() {
@@ -180,10 +246,14 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
 <div class="panel" role="dialog" aria-label="WordBomb" hidden>
   <div class="head">${TROPHY}<span>WordBomb</span><button data-a="close" aria-label="Fermer">✕</button></div>
   <div class="body">
-    <input id="syl" placeholder="Syllabe (ex. an)" autocomplete="off" spellcheck="false" aria-label="Syllabe en cours">
+    <input id="syl" type="text" placeholder="Syllabe (ex. an)" autocomplete="off" spellcheck="false" aria-label="Syllabe en cours">
     <div class="words"></div>
     <div class="track"></div>
-    <div class="foot"><span>—</span><button data-a="undo">Annuler</button><button data-a="reset">Reset</button></div>
+    <div class="set" hidden>
+      <label>Vitesse <b>${lps}</b> lettres/s<input type="range" min="10" max="100" step="1" value="${lps}" data-k="lps"></label>
+      <label>Erreurs <b>${humanChance}</b> %<input type="range" min="0" max="100" step="1" value="${humanChance}" data-k="humanChance"></label>
+    </div>
+    <div class="foot"><span>—</span><span class="rate"></span><button data-a="set" aria-label="Réglages" aria-pressed="false">⚙</button><button data-a="undo">Annuler</button><button data-a="reset">Reset</button></div>
   </div>
 </div>`;
         document.body.appendChild(host);
@@ -192,12 +262,22 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
             input: root.querySelector("#syl"),
             words: root.querySelector(".words"),
             track: root.querySelector(".track"),
+            set: root.querySelector(".set"),
             status: root.querySelector(".foot span"),
+            rate: root.querySelector(".foot .rate"),
         };
 
         root.querySelector('[data-a="close"]').addEventListener("click", close);
         root.querySelector('[data-a="undo"]').addEventListener("click", undo);
         root.querySelector('[data-a="reset"]').addEventListener("click", reset);
+        root.querySelector('[data-a="set"]').addEventListener("click", e => {
+            const open = $.set.hidden;
+            $.set.hidden = !open;
+            e.currentTarget.setAttribute("aria-pressed", String(open));
+        });
+        root.querySelectorAll("[data-k]").forEach(i =>
+            i.addEventListener("input", () => setting(i.dataset.k, Number(i.value)))
+        );
         $.input.addEventListener("input", draw);
         $.input.addEventListener("keydown", e => {
             if (e.key === "Enter") { e.preventDefault(); search(); }
@@ -223,6 +303,7 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
             addEventListener("mouseup", up);
         });
 
+        syncLabel();
         draw();
         load();
     }
@@ -230,7 +311,7 @@ input:focus { outline-color: var(--plume, #8b7cf6); }
     function open() {
         mount();
         $.panel.hidden = false;
-        $.input.focus();
+        focusInput();
     }
 
     function close() {

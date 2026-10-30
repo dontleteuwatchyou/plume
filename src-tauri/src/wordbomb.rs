@@ -1,42 +1,53 @@
-//! Frappe d'un mot dans l'Activity WordBomb / BombParty.
+//! Frappe dans l'Activity WordBomb / BombParty.
 //!
 //! Le jeu tourne dans une iframe cross-origin : la page Discord ne peut ni la
 //! lire ni lui envoyer d'événements. WebView2, lui, peut injecter des entrées
 //! au niveau du navigateur (DevTools Protocol), ce que faisait le plugin
-//! Electron de Nightcord avec SendInput. On clique donc dans l'iframe, on tape
-//! le mot touche par touche, puis Entrée.
+//! Electron de Nightcord avec SendInput. La page envoie une commande par touche
+//! pour garder la main sur le rythme (vitesse réglable, fautes) ; ici on ne
+//! fait que cliquer puis taper ce qu'on nous donne.
 
 use std::time::Duration;
 
 use tauri::WebviewWindow;
 
-/// Tape `text` dans l'Activity, aux coordonnées CSS données par la page.
-/// Ne rend la main qu'une fois la frappe terminée.
+/// `click` place le curseur dans l'Activity, `text` est tapé ensuite.
+/// `\n` = Entrée, `\u{8}` = retour arrière. Ne rend la main qu'une fois fait.
 #[tauri::command]
-pub async fn wordbomb_type(window: WebviewWindow, text: String, x: f64, y: f64) -> Result<(), String> {
+pub async fn wordbomb_type(
+    window: WebviewWindow,
+    text: String,
+    x: f64,
+    y: f64,
+    click: bool,
+) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let text: String = text.chars().filter(|c| !c.is_control()).take(64).collect();
-        if text.is_empty() {
+        let text: String = text
+            .chars()
+            .filter(|c| matches!(c, '\n' | '\u{8}') || !c.is_control())
+            .take(32)
+            .collect();
+        if text.is_empty() && !click {
             return Ok(());
         }
         let (tx, rx) = std::sync::mpsc::channel::<()>();
         window
             .with_webview(move |wv| unsafe {
                 if let Ok(core) = wv.controller().CoreWebView2() {
-                    win::type_word(&core, &text, x, y, tx);
+                    win::send(&core, &text, x, y, click, tx);
                 }
             })
             .map_err(|e| e.to_string())?;
         // La chaîne CDP continue après le retour de `with_webview` ; on attend
-        // sa fin pour que la page puisse reprendre le focus après la frappe.
+        // sa fin pour que la page sache quand reprendre le focus.
         let _ = tauri::async_runtime::spawn_blocking(move || {
             let _ = rx.recv_timeout(Duration::from_secs(10));
         })
         .await;
     }
     #[cfg(not(windows))]
-    let _ = (window, text, x, y);
+    let _ = (window, text, x, y, click);
     Ok(())
 }
 
@@ -55,7 +66,8 @@ mod win {
     type Done = Arc<Mutex<Option<Sender<()>>>>;
 
     /// Envoie la commande suivante, puis la suivante, etc. L'ordre compte :
-    /// chaque commande n'est lancée qu'une fois la précédente terminée.
+    /// chaque commande n'est lancée qu'une fois la précédente terminée. Une
+    /// erreur n'arrête pas la chaîne, sinon la page attendrait dix secondes.
     fn step(core: &ICoreWebView2, queue: &Queue, done: &Done) {
         let Some((method, params)) = queue.lock().unwrap().pop_front() else {
             if let Some(tx) = done.lock().unwrap().take() {
@@ -65,18 +77,22 @@ mod win {
         };
         let (next_core, next_queue, next_done) = (core.clone(), queue.clone(), done.clone());
         let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |res, _| {
-            match res {
-                Ok(()) => step(&next_core, &next_queue, &next_done),
-                Err(e) => eprintln!("[plume] wordbomb : {e}"),
+            if let Err(e) = res {
+                eprintln!("[plume] wordbomb : {e}");
             }
+            step(&next_core, &next_queue, &next_done);
             Ok(())
         }));
-        unsafe {
-            let _ = core.CallDevToolsProtocolMethod(
+        let sent = unsafe {
+            core.CallDevToolsProtocolMethod(
                 &HSTRING::from(method),
                 &HSTRING::from(params),
                 &handler,
-            );
+            )
+        };
+        if let Err(e) = sent {
+            eprintln!("[plume] wordbomb : {method} : {e}");
+            step(core, queue, done);
         }
     }
 
@@ -85,6 +101,7 @@ mod win {
     fn key(code: u32, name: &str, text: &str) -> [(&'static str, String); 2] {
         let ev_code = match name {
             "Enter" => "Enter".to_string(),
+            "Backspace" => "Backspace".to_string(),
             " " => "Space".to_string(),
             n if n.len() == 1 && n.chars().all(|c| c.is_ascii_alphabetic()) => {
                 format!("Key{}", n.to_ascii_uppercase())
@@ -111,45 +128,53 @@ mod win {
         ]
     }
 
-    pub fn type_word(core: &ICoreWebView2, text: &str, x: f64, y: f64, done: Sender<()>) {
+    pub fn send(core: &ICoreWebView2, text: &str, x: f64, y: f64, click: bool, done: Sender<()>) {
         let queue: Queue = Arc::new(Mutex::new(VecDeque::new()));
         {
             let mut q = queue.lock().unwrap();
-            let mouse = |kind: &str| {
-                (
+            if click {
+                let mouse = |kind: &str, buttons: i32| {
+                    (
+                        "Input.dispatchMouseEvent",
+                        json!({
+                            "type": kind,
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "buttons": buttons,
+                            "clickCount": 1,
+                        })
+                        .to_string(),
+                    )
+                };
+                q.push_back((
                     "Input.dispatchMouseEvent",
-                    json!({
-                        "type": kind,
-                        "x": x,
-                        "y": y,
-                        "button": "left",
-                        "buttons": if kind == "mouseReleased" { 0 } else { 1 },
-                        "clickCount": 1,
-                    })
-                    .to_string(),
-                )
-            };
-            // Le survol aide les champs qui n'affichent le curseur qu'au hover.
-            q.push_back((
-                "Input.dispatchMouseEvent",
-                json!({ "type": "mouseMoved", "x": x, "y": y }).to_string(),
-            ));
-            q.push_back(mouse("mousePressed"));
-            q.push_back(mouse("mouseReleased"));
+                    json!({ "type": "mouseMoved", "x": x, "y": y }).to_string(),
+                ));
+                q.push_back(mouse("mousePressed", 1));
+                q.push_back(mouse("mouseReleased", 0));
+            }
 
             for ch in text.chars() {
-                let (code, name) = match ch {
-                    'a'..='z' | 'A'..='Z' => (ch.to_ascii_uppercase() as u32, ch.to_string()),
-                    '0'..='9' => (ch as u32, ch.to_string()),
-                    ' ' => (32, " ".into()),
-                    _ => (0, ch.to_string()),
+                let (code, name, typed) = match ch {
+                    '\n' => (13, "Enter".to_string(), "\r".to_string()),
+                    '\u{8}' => (8, "Backspace".to_string(), String::new()),
+                    c => {
+                        let vk = if c.is_ascii_alphabetic() {
+                            c.to_ascii_uppercase() as u32
+                        } else if c.is_ascii_digit() {
+                            c as u32
+                        } else if c == ' ' {
+                            32
+                        } else {
+                            0
+                        };
+                        (vk, c.to_string(), c.to_string())
+                    }
                 };
-                for event in key(code, &name, &ch.to_string()) {
+                for event in key(code, &name, &typed) {
                     q.push_back(event);
                 }
-            }
-            for event in key(13, "Enter", "\r") {
-                q.push_back(event);
             }
         }
         step(core, &queue, &Arc::new(Mutex::new(Some(done))));
