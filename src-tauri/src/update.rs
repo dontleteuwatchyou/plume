@@ -3,10 +3,29 @@
 //! On ne met jamais à jour en silence (un appel vocal pourrait couper) : on
 //! prévient, et l'utilisateur installe depuis Paramètres Plume → Mises à jour.
 
+use std::sync::Mutex;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
+
+/// Version disponible connue, gardée côté Plume : la page la redemande à
+/// chaque chargement (pastilles, bulle), même après un rechargement de Discord.
+#[derive(Default)]
+pub struct Pending(pub Mutex<Option<String>>);
+
+#[tauri::command]
+pub fn update_pending(pending: tauri::State<Pending>) -> Option<String> {
+    pending.0.lock().unwrap().clone()
+}
+
+fn remember(app: &AppHandle, version: Option<String>) {
+    *app.state::<Pending>().0.lock().unwrap() = version.clone();
+    if let (Some(v), Some(w)) = (version, app.get_webview_window(crate::MAIN)) {
+        let _ = w.eval(format!("window.__plumeUpdateAvailable && window.__plumeUpdateAvailable({v:?})"));
+    }
+}
 
 #[derive(Serialize)]
 pub struct UpdateInfo {
@@ -27,7 +46,11 @@ async fn check(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, 
 #[tauri::command]
 pub async fn update_check(app: AppHandle) -> UpdateInfo {
     let current = app.package_info().version.to_string();
-    match check(&app).await {
+    let result = check(&app).await;
+    if let Ok(update) = &result {
+        remember(&app, update.as_ref().map(|u| u.version.clone()));
+    }
+    match result {
         Ok(update) => UpdateInfo {
             current,
             available: update.is_some(),
@@ -102,15 +125,17 @@ pub fn check_on_startup(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio_sleep(30).await;
         let Ok(Some(update)) = check(&app).await else { return };
-        let _ = app
-            .notification()
-            .builder()
-            .title(format!("Plume {} est disponible", update.version))
-            .body("Paramètres Plume → Mises à jour pour l'installer.")
-            .show();
-        if let Some(w) = app.get_webview_window(crate::MAIN) {
-            let _ = w.eval(format!("window.__plumeUpdateAvailable && window.__plumeUpdateAvailable({:?})", update.version));
+        // Fenêtre ouverte : la bulle Plume suffit. Cachée : notification Windows.
+        let hidden = app.get_webview_window(crate::MAIN).map(|w| !w.is_visible().unwrap_or(false)).unwrap_or(true);
+        if hidden {
+            let _ = app
+                .notification()
+                .builder()
+                .title(format!("Plume {} est disponible", update.version))
+                .body("Paramètres Plume → Mises à jour pour l'installer.")
+                .show();
         }
+        remember(&app, Some(update.version.clone()));
     });
 }
 

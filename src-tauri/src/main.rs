@@ -285,9 +285,11 @@ fn main() {
             settings::rnnoise_worklet,
             settings::rnnoise_wasm,
             update::update_check,
+            update::update_pending,
             update::update_install
         ])
         .manage(ptt::PttKeys::default())
+        .manage(update::Pending::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = Config::load(&handle);

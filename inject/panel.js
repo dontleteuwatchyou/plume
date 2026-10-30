@@ -42,6 +42,7 @@
 .side button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--interactive-normal, #b5bac1); font: inherit; font-size: 15px;
   padding: 6px 10px; border-radius: 6px; margin-bottom: 2px; cursor: pointer; }
 .side button:hover { background: var(--background-modifier-hover, #ffffff0f); color: var(--interactive-hover, #dbdee1); }
+.side button[data-update]::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #3ba55c; vertical-align: 1px; }
 .side button[aria-current="true"] { background: var(--background-modifier-selected, #ffffff1f); color: var(--interactive-active, #fff); }
 .main { flex: 1 1 800px; display: flex; overflow: auto; padding: 60px 40px 80px; }
 .content { width: 100%; max-width: 740px; }
@@ -204,6 +205,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
     function render() {
         const a = cfg.audio;
         root.querySelectorAll(".side button").forEach(b => b.setAttribute("aria-current", b.dataset.s === current));
+        root.querySelector('.side button[data-s="update"]')?.toggleAttribute("data-update", !!window.__plumeUpdateVersion);
         root.querySelectorAll("[data-k]").forEach(i => (i.checked = ["trimInBackground", "autoUpdate"].includes(i.dataset.k) ? !!cfg[i.dataset.k] : !!a[i.dataset.k]));
         if ($("#gain")) { $("#gain").value = Math.round(a.gain * 100); const db = a.gain > 0 ? 20 * Math.log10(a.gain) : -Infinity; $("#gainVal").textContent = `${Math.round(a.gain * 100)} % (${db === -Infinity ? "muet" : `${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`})`; }
         if ($("#bitrate")) { $("#bitrate").value = a.bitrate / 1000; $("#bitrateVal").textContent = kbps(a.bitrate); }
@@ -458,8 +460,9 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(); }
     }
 
-    async function open() {
-        if (host) return;
+    async function open(section) {
+        if (section && PAGES[section]) current = section;
+        if (host) { show(current); return; }
         cfg = await invoke("get_config");
         host = document.createElement("plume-settings");
         root = host.attachShadow({ mode: "open" });
@@ -495,5 +498,6 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         setTimeout(() => h.remove(), 180);
     }
 
-    window.__plumeOpenPanel = () => (host ? close() : open());
+    // Sans argument : bascule ouvert/fermé. Avec une section : l'ouvre dessus.
+    window.__plumeOpenPanel = section => (section ? open(section) : host ? close() : open());
 })();

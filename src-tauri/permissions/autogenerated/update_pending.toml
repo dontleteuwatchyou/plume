@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-pending"
+description = "Enables the update_pending command without any pre-configured scope."
+commands.allow = ["update_pending"]
+
+[[permission]]
+identifier = "deny-update-pending"
+description = "Denies the update_pending command without any pre-configured scope."
+commands.deny = ["update_pending"]

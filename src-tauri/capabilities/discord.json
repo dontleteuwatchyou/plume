@@ -6,5 +6,5 @@
   "remote": {
     "urls": ["https://discord.com/*", "https://*.discord.com/*"]
   },
-  "permissions": ["allow-notify", "allow-open-url", "allow-ptt-keys", "allow-win-minimize", "allow-win-toggle-maximize", "allow-win-close", "allow-get-config", "allow-set-config", "allow-audio-config", "allow-rnnoise-worklet", "allow-rnnoise-wasm", "allow-update-check", "allow-update-install"]
+  "permissions": ["allow-notify", "allow-open-url", "allow-ptt-keys", "allow-win-minimize", "allow-win-toggle-maximize", "allow-win-close", "allow-get-config", "allow-set-config", "allow-audio-config", "allow-rnnoise-worklet", "allow-rnnoise-wasm", "allow-update-check", "allow-update-pending", "allow-update-install"]
 }
