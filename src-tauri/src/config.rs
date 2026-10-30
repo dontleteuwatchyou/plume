@@ -17,6 +17,9 @@ pub struct Config {
     /// Libère la mémoire quand Plume n'est pas au premier plan.
     #[serde(rename = "trimInBackground")]
     pub trim_in_background: bool,
+    /// Cherche une nouvelle version de Plume au démarrage.
+    #[serde(rename = "autoUpdate")]
+    pub auto_update: bool,
     /// Combinaison PTT forcée, en codes VK (ex. [5] = bouton souris 4).
     /// Vide : on reprend la touche réglée dans Discord.
     #[serde(rename = "pttKeys")]
@@ -106,6 +109,7 @@ impl Default for Config {
             audio: Audio::default(),
             memory: MemoryMode::Reduced,
             trim_in_background: true,
+            auto_update: true,
             ptt_keys: Vec::new(),
         }
     }

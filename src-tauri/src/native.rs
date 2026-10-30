@@ -166,6 +166,23 @@ mod win {
     }
 }
 
+/// Attend (5 s au plus) que le moteur WebView2 d'un Plume précédent ait fini de
+/// se fermer : il garde `EBWebView\lockfile` ouvert en exclusif tant qu'il
+/// tourne. Sinon le nouveau Plume se raccroche à ce moteur mourant, et Windows
+/// range ses processus à part (« WebView2 Manager ») au lieu de sous Plume.
+pub fn wait_previous_engine(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Ok(dir) = app.path().app_local_data_dir() else { return };
+    let lock = dir.join("EBWebView").join("lockfile");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while lock.exists() && std::fs::OpenOptions::new().write(true).open(&lock).is_err() {
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 pub fn setup_webview(w: &WebviewWindow) {
     #[cfg(windows)]
     let _ = w.with_webview(|wv| unsafe {

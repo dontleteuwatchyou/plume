@@ -24,7 +24,7 @@
         ["reduced", "Réduite", "Environ 120 Mo de moins. Aucune contrepartie visible."],
         ["max", "Maximale", "Environ 140 Mo de moins. Vidéos et streams sollicitent davantage le processeur."],
     ];
-    const SECTIONS = [["audio", "Audio"], ["visu", "Visualiseur"], ["diag", "Diagnostic"], ["mod", "Mod client"], ["perf", "Performances"]];
+    const SECTIONS = [["audio", "Audio"], ["visu", "Visualiseur"], ["diag", "Diagnostic"], ["mod", "Mod client"], ["perf", "Performances"], ["update", "Mises à jour"]];
 
     const css = `
 :host { all: initial; }
@@ -180,6 +180,18 @@ ${toggle("autoGainControl", "Gain automatique", "Égalise le volume. Écrase la 
 ${[["nightcord", "Nightcord", "Fork d'Equicord, près de 490 plugins."], ["equicord", "Equicord", "Fork de Vencord, environ 370 plugins."], ["none", "Aucun", "Discord sans modification. Le push-to-talk global a besoin d'un mod."]]
     .map(([v, t, d]) => `<label class="radio" data-mod="${v}"><input type="radio" name="mod" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}`,
 
+        update: () => `
+<h2>Mises à jour</h2>
+<div class="stats" style="grid-template-columns:repeat(2,1fr)">
+  <div class="stat"><div class="k">Version installée</div><div class="v" id="upCur">—</div></div>
+  <div class="stat"><div class="k">État</div><div class="v" id="upState">Vérification…</div></div>
+</div>
+<div class="visbar" style="margin-top:14px"><button class="btn ghost" id="upCheck">Vérifier maintenant</button><button class="btn" id="upInstall" hidden>Installer et redémarrer</button></div>
+<div class="note" id="upNotes" hidden></div>
+<h4>Automatique</h4>
+${toggle("autoUpdate", "Vérifier au démarrage", "Plume cherche une nouvelle version 30 s après son lancement et te prévient par une notification. Il n'installe jamais rien sans ton clic.", "")}
+<p class="muted" style="margin-top:14px">Les mises à jour viennent des releases GitHub du projet et sont signées : une version qui ne porte pas la signature de Plume est refusée.</p>`,
+
         perf: () => `
 <h2>Performances</h2>
 <h4>Économie de mémoire</h4>
@@ -192,7 +204,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
     function render() {
         const a = cfg.audio;
         root.querySelectorAll(".side button").forEach(b => b.setAttribute("aria-current", b.dataset.s === current));
-        root.querySelectorAll("[data-k]").forEach(i => (i.checked = i.dataset.k === "trimInBackground" ? !!cfg.trimInBackground : !!a[i.dataset.k]));
+        root.querySelectorAll("[data-k]").forEach(i => (i.checked = ["trimInBackground", "autoUpdate"].includes(i.dataset.k) ? !!cfg[i.dataset.k] : !!a[i.dataset.k]));
         if ($("#gain")) { $("#gain").value = Math.round(a.gain * 100); const db = a.gain > 0 ? 20 * Math.log10(a.gain) : -Infinity; $("#gainVal").textContent = `${Math.round(a.gain * 100)} % (${db === -Infinity ? "muet" : `${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`})`; }
         if ($("#bitrate")) { $("#bitrate").value = a.bitrate / 1000; $("#bitrateVal").textContent = kbps(a.bitrate); }
         root.querySelectorAll("#frame button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === a.frameMs));
@@ -231,7 +243,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         });
         page.addEventListener("change", e => {
             const k = e.target.dataset?.k;
-            if (k === "trimInBackground") { cfg.trimInBackground = e.target.checked; save(); }
+            if (k === "trimInBackground" || k === "autoUpdate") { cfg[k] = e.target.checked; save(); }
             else if (k) { cfg.audio[k] = e.target.checked; save(); }
             if (e.target.name === "mod" && e.target.value !== cfg.mod) { cfg.mod = e.target.value; save(0); }
             if (e.target.name === "mem" && e.target.value !== cfg.memory) {
@@ -250,6 +262,8 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
             if (b.dataset.eqp) { const p = EQ_PRESETS[b.dataset.eqp]; Object.assign(cfg.audio.eq, { enabled: true, highpass: p.highpass, bands: [...p.bands] }); save(0); }
             if (b.id === "micTest") toggleMicTest();
             if (b.id === "selfTest") runSelfTest(b);
+            if (b.id === "upCheck") checkUpdate();
+            if (b.id === "upInstall") installUpdate(b);
         });
     }
 
@@ -261,6 +275,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         render();
         if (section === "visu") startVisu();
         if (section === "diag") { refreshLive(); poll = setInterval(refreshLive, 1000); }
+        if (section === "update") checkUpdate();
         $(".main").scrollTop = 0;
     }
 
@@ -400,6 +415,42 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
             stat("Paquets / s", s.paquetsParSeconde) +
             stat("Traitements", [s.echoCancellation && "écho", s.noiseSuppression && "bruit", s.autoGainControl && "gain"].filter(Boolean).join(", ") || "aucun") +
             `<div class="stat wide"><div class="k">Ligne Opus négociée</div><div class="v mono">${esc(s.fmtp)}</div></div>`;
+    }
+
+    // ---- Mises à jour -------------------------------------------------------
+    async function checkUpdate() {
+        if (!$("#upState")) return;
+        $("#upState").textContent = "Vérification…";
+        $("#upInstall").hidden = true;
+        try {
+            const u = await invoke("update_check");
+            $("#upCur").textContent = u.current;
+            $("#upState").textContent = u.available ? `Plume ${u.version} disponible` : "À jour";
+            $("#upState").className = `v ${u.available ? "" : "good"}`;
+            $("#upInstall").hidden = !u.available;
+            $("#upNotes").hidden = !u.notes;
+            $("#upNotes").textContent = u.notes || "";
+        } catch (e) {
+            $("#upState").textContent = "Impossible de vérifier";
+            $("#upState").className = "v bad";
+            $("#upNotes").hidden = false;
+            $("#upNotes").textContent = String(e);
+        }
+    }
+    async function installUpdate(btn) {
+        btn.disabled = true;
+        btn.textContent = "Téléchargement…";
+        $("#upState").textContent = "Installation, Plume va redémarrer…";
+        try {
+            await invoke("update_install");
+        } catch (e) {
+            btn.disabled = false;
+            btn.textContent = "Installer et redémarrer";
+            $("#upState").textContent = "Échec de l'installation";
+            $("#upState").className = "v bad";
+            $("#upNotes").hidden = false;
+            $("#upNotes").textContent = String(e);
+        }
     }
 
     // ---- Ouverture / fermeture --------------------------------------------

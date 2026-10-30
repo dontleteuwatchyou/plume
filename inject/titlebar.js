@@ -25,6 +25,8 @@
 }
 #plume-winbtns button:hover { background: var(--background-modifier-hover, rgba(255,255,255,.08)); color: var(--interactive-hover, #fff); }
 #plume-winbtns button[data-act="close"]:hover { background: #da373c; color: #fff; }
+#plume-winbtns button[data-act="settings"] { position: relative; }
+#plume-winbtns button[data-act="settings"][data-update]::after { content: ""; position: absolute; top: 7px; right: 11px; width: 7px; height: 7px; border-radius: 50%; background: #3ba55c; box-shadow: 0 0 0 2px var(--background-base-lowest, #111214); }
 `;
 
     function mount() {
@@ -50,6 +52,12 @@
             btns.appendChild(b);
         }
         document.body.appendChild(btns);
+        // Pastille verte sur le bouton plume quand une mise à jour attend.
+        window.__plumeUpdateAvailable = version => {
+            const b = btns.querySelector('[data-act="settings"]');
+            b.dataset.update = version;
+            b.title = `Paramètres Plume — Plume ${version} disponible`;
+        };
 
         // Quand Discord affiche sa propre barre du haut (une fois connecté), on
         // lui laisse le déplacement, on aligne la hauteur des boutons sur elle

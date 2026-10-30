@@ -37,6 +37,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
 | Réduction dans la zone de notification | ❌ | ✅ |
 | Démarrage caché (`--minimized`) | ❌ | ✅ |
+| **Mise à jour automatique** signée, depuis les releases GitHub | — | ✅ |
 | Liens ouverts dans ton navigateur | — | ✅ |
 
 ## Chiffres
@@ -142,7 +143,7 @@ En version web, Discord n'entend ta touche que si sa fenêtre a le focus, ce qui
 
 ## Installation
 
-Télécharge `Plume_x.y.z_x64-setup.exe` dans les [Releases](../../releases) et lance-le. Aucun droit administrateur n'est nécessaire. Si WebView2 manque (rare sous Windows 10), l'installateur le télécharge.
+Télécharge `Plume_x.y.z_x64-setup.exe` dans les [Releases](../../releases) et lance-le. Ensuite, Plume se met à jour tout seul : au démarrage, il cherche une nouvelle version et te prévient (notification + pastille verte sur le bouton plume). L'installation se lance depuis **Paramètres Plume → Mises à jour**, jamais sans ton clic. Les paquets sont signés, une version non signée par le projet est refusée. Aucun droit administrateur n'est nécessaire. Si WebView2 manque (rare sous Windows 10), l'installateur le télécharge.
 
 ## Configuration
 
@@ -208,6 +209,12 @@ npm run dev     # lancement en développement
 npm run build   # installateur dans src-tauri/target/release/bundle/nsis/
 ```
 
+Publier une version (monter `version` dans `src-tauri/tauri.conf.json` avant) : le script compile, signe avec la clé privée (`%USERPROFILE%\.tauri\plume-updater.key`, hors du dépôt), écrit `latest.json` et crée la release.
+
+```powershell
+powershell -File scriptselease.ps1 -Notes "Ce qui change"
+```
+
 ```
 src-tauri/src/
   main.rs       fenêtre, navigation, zone de notification, commandes
@@ -216,6 +223,7 @@ src-tauri/src/
   ptt.rs        surveillance globale de la touche PTT
   config.rs     config.json
   settings.rs   application des réglages (à chaud, rechargement ou redémarrage)
+  update.rs     mise à jour automatique (releases GitHub, paquets signés)
 inject/
   shim.js       notifications Windows natives
   stereo.js     audio WebRTC : RNNoise, égaliseur, gain, limiteur, stéréo, débit, trame… + diagnostic

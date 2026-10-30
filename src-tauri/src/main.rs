@@ -5,6 +5,7 @@ mod mods;
 mod native;
 mod ptt;
 mod settings;
+mod update;
 
 use std::sync::Mutex;
 
@@ -267,6 +268,7 @@ fn main() {
         )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             notify,
             open_url,
@@ -278,13 +280,16 @@ fn main() {
             settings::set_config,
             settings::audio_config,
             settings::rnnoise_worklet,
-            settings::rnnoise_wasm
+            settings::rnnoise_wasm,
+            update::update_check,
+            update::update_install
         ])
         .manage(ptt::PttKeys::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = Config::load(&handle);
             app.manage(Mutex::new(cfg.clone()));
+            native::wait_previous_engine(&handle);
             let main = build_main(&handle, &cfg)?;
             // --minimized : démarrage directement dans la zone de notification.
             if std::env::args().any(|a| a == "--minimized") {
@@ -294,7 +299,10 @@ fn main() {
             }
             build_tray(&handle)?;
             ptt::spawn(handle.clone());
-            mods::refresh_in_background(handle, cfg.client_mod);
+            mods::refresh_in_background(handle.clone(), cfg.client_mod);
+            if cfg.auto_update {
+                update::check_on_startup(handle);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
