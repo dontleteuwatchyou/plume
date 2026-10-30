@@ -55,10 +55,19 @@
             const line = `a=fmtp:${pt} ${[...params].map(([k, v]) => (v === "" ? k : `${k}=${v}`)).join(";")}`;
             sdp = m ? sdp.replace(fmtp, line) : sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2[^\\r\\n]*)`, "i"), `$1${nl}${line}`);
         }
-        // Taille de trame : a=ptime / a=maxptime de chaque section audio.
+        // Sections audio : Discord y écrit `b=AS:<débit du salon>` (64 kb/s par
+        // défaut sur un serveur), que WebRTC respecte comme plafond ; on le
+        // remplace par le débit choisi. La taille de trame (a=ptime /
+        // a=maxptime) est ajoutée en fin de section, après les autres attributs.
         if (pts.length) {
-            sdp = sdp.replace(/^a=(max)?ptime:\d+\r?\n/gm, "");
-            sdp = sdp.replace(/(m=audio [^\r\n]*\r?\n)/g, `$1a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`);
+            sdp = sdp.split(/(?=^m=)/m).map(section => {
+                if (!section.startsWith("m=audio")) return section;
+                section = section.replace(/^(b=(AS|TIAS):\d+|a=(max)?ptime:\d+)\r?\n/gm, "");
+                // +32 kb/s : b=AS compte aussi les en-têtes RTP, pas seulement Opus.
+                section = section.replace(/^(c=[^\r\n]*\r?\n)/m, `$1b=AS:${Math.ceil(A.bitrate / 1000) + 32}${nl}`);
+                const end = section.endsWith("\n") ? "" : nl;
+                return `${section}${end}a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`;
+            }).join("");
         }
         return sdp;
     }
