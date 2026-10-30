@@ -1,8 +1,8 @@
-// Push-to-talk global, côté page. Plume (Rust) surveille les touches dans tout
+// Push-to-talk global, cÃ´tÃ© page. Plume (Rust) surveille les touches dans tout
 // Windows et appelle __plumePTT(true|false) ; on reproduit alors ce que fait
-// Discord quand sa propre touche PTT est enfoncée (setForceAudioInput sur
-// chaque connexion vocale). La combinaison surveillée est celle réglée dans
-// Discord (Paramètres > Voix et vidéo), sauf si config.json fixe pttKeys.
+// Discord quand sa propre touche PTT est enfoncÃ©e (setForceAudioInput sur
+// chaque connexion vocale). La combinaison surveillÃ©e est celle rÃ©glÃ©e dans
+// Discord (ParamÃ¨tres > Voix et vidÃ©o), sauf si config.json fixe pttKeys.
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const cfg = window.__PLUME__ || {};
@@ -37,11 +37,13 @@
         s.getMediaEngine().eachConnection(c => c.setForceAudioInput(active, false, false));
     };
 
-    // Raccourci Discord : [[type, code], …]. Types : 0 touche, 2 modificateur
+    // Raccourci Discord : [[type, code], â€¦]. Types : 0 touche, 2 modificateur
     // (code = keyCode du navigateur, identique au code VK de Windows),
-    // 1 bouton de souris (code = MouseEvent.button), 3 manette (ignoré).
+    // 1 bouton de souris (code = MouseEvent.button), 3 manette (ignorÃ©).
     const MOUSE_VK = [0x01, 0x04, 0x02, 0x05, 0x06];
+    // Hors appel, aucune touche : Plume ne lit alors pas du tout le clavier.
     function wantedKeys() {
+        if (!window.plumeStereo?.voiceActive()) return [];
         if (Array.isArray(cfg.pttKeys) && cfg.pttKeys.length) return cfg.pttKeys;
         const s = mediaEngineStore();
         if (!s || s.getMode() !== "PUSH_TO_TALK") return [];
@@ -58,5 +60,5 @@
             sent = key;
             invoke("ptt_keys", { keys }).catch(() => (sent = ""));
         }
-    }, 2000);
+    }, 1000);
 })();

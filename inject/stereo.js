@@ -475,6 +475,9 @@
         return out;
     }
 
-    window.plumeStereo = { mungeSdp, status, selfTest, inspect, activeChain, inCall, setMonitor, get settings() { return A; } };
+    // Vrai pendant un appel vocal (une connexion WebRTC envoie du son).
+    const voiceActive = () => audioSenders().length > 0;
+
+    window.plumeStereo = { mungeSdp, status, selfTest, inspect, activeChain, inCall, voiceActive, setMonitor, get settings() { return A; } };
     log("actif", A);
 })();

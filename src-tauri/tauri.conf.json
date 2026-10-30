@@ -36,7 +36,13 @@
         "installerIcon": "icons/icon.ico"
       }
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "publisher": "dontleteuwatchyou",
+    "copyright": "© 2026 dontleteuwatchyou — GPL-3.0",
+    "homepage": "https://github.com/dontleteuwatchyou/plume",
+    "category": "SocialNetworking",
+    "shortDescription": "Client Discord léger (Tauri + WebView2)",
+    "longDescription": "Plume affiche l'interface officielle de discord.com dans WebView2, avec un mod client, des réglages audio avancés et un push-to-talk global."
   },
   "plugins": {
     "updater": {

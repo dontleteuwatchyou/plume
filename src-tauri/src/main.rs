@@ -93,7 +93,7 @@ fn hide_to_tray(window: &WebviewWindow) {
 
 #[tauri::command]
 fn ptt_keys(keys: Vec<i32>, state: tauri::State<ptt::PttKeys>) {
-    *state.0.lock().unwrap() = keys;
+    state.set(keys);
 }
 
 pub(crate) fn show_main(app: &AppHandle) {
