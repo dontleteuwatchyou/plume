@@ -212,7 +212,7 @@ npm run build   # installateur dans src-tauri/target/release/bundle/nsis/
 Publier une version (monter `version` dans `src-tauri/tauri.conf.json` avant) : le script compile, signe avec la clé privée (`%USERPROFILE%\.tauri\plume-updater.key`, hors du dépôt), écrit `latest.json` et crée la release.
 
 ```powershell
-powershell -File scriptselease.ps1 -Notes "Ce qui change"
+powershell -File scripts\release.ps1 -Notes "Ce qui change"
 ```
 
 ```
