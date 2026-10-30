@@ -12,9 +12,10 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-/// Nightcord recompilé par Plume (scripts/build-nightcord.ps1) : sa version web
-/// avec les plugins que l'officielle retire (enregistreurs, StreamProof…).
-const PLUME_NIGHTCORD: &str = "https://github.com/dontleteuwatchyou/plume/releases/download/nightcord/nightcord-plume.zip";
+/// Nightcord Web+ (github.com/dontleteuwatchyou/nightcord-web-plus) : la version
+/// web recompilée chaque jour avec les plugins que l'officielle retire et les
+/// réglages des plugins qui ne sautent plus.
+const PLUME_NIGHTCORD: &str = "https://github.com/dontleteuwatchyou/nightcord-web-plus/releases/latest/download/nightcord-web-plus.zip";
 const NIGHTCORD_RELEASE: &str = "https://source.nightcord.st/api/v1/repos/nightcord/nightcord/releases/latest";
 const EQUICORD_EXTENSION: &str = "https://github.com/Equicord/Equicord/releases/download/latest/extension-chrome.zip";
 const MAX_AGE: Duration = Duration::from_secs(6 * 3600);
@@ -101,7 +102,7 @@ fn download(m: ClientMod, root: &Path) -> Result<PathBuf, String> {
     let zip = match m {
         // Repli sur l'extension officielle si la nôtre n'est pas publiée.
         ClientMod::Nightcord => get_bytes(PLUME_NIGHTCORD).or_else(|e| {
-            eprintln!("[plume] nightcord-plume : {e}, repli sur l'officielle");
+            eprintln!("[plume] nightcord-web-plus : {e}, repli sur l'officielle");
             get_bytes(&extension_url(m)?)
         })?,
         _ => get_bytes(&extension_url(m)?)?,
