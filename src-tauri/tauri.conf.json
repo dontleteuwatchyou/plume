@@ -32,7 +32,8 @@
         "languages": [
           "French",
           "English"
-        ]
+        ],
+        "installerIcon": "icons/icon.ico"
       }
     },
     "createUpdaterArtifacts": true
