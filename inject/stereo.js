@@ -12,7 +12,7 @@
 //
 // Les traitements du micro, le débit et la priorité s'appliquent en direct
 // (__plumeApply) ; le reste à la prochaine connexion vocale.
-// Console : plumeStereo.status(), plumeStereo.selfTest().
+// Console : plumeStereo.status(), plumeStereo.selfTest(). Panneau : inject/panel.js.
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
@@ -82,13 +82,106 @@
     const peers = new Set();
     const mics = new Set();
 
+    // ---- Gain + limiteur ---------------------------------------------------
+    // Le micro passe par WebAudio : gain (jusqu'à 800 %), limiteur, puis la
+    // piste envoyée à Discord. Les analyseurs gauche/droite branchés en sortie
+    // alimentent le visualiseur : ils voient exactement ce qui part.
+    const chains = new Set();
+
+    // Écrêteur de sécurité après le compresseur (trop lent pour arrêter seul
+    // les crêtes) : fidèle jusqu'à -0,4 dBFS, puis arrondi jusqu'au plafond de
+    // -0,2 dBFS, qui vaut aussi pour tout ce qui dépasse 0 dBFS (WaveShaper
+    // étend la dernière valeur de la courbe). Pente continue au raccord.
+    const CLIP = (() => {
+        const n = 8192, curve = new Float32Array(n), ceil = 0.977, t = 2 * ceil - 1;
+        for (let i = 0; i < n; i++) {
+            const x = (i / (n - 1)) * 2 - 1, a = Math.abs(x), u = (a - t) / (1 - t);
+            curve[i] = Math.sign(x) * (a <= t ? a : t + (ceil - t) * (1 - (1 - u) ** 2));
+        }
+        return curve;
+    })();
+
+    function wire(c) {
+        c.gain.disconnect();
+        c.limiter.disconnect();
+        c.clipper.disconnect();
+        const tail = A.limiter ? (c.gain.connect(c.limiter), c.limiter.connect(c.clipper), c.clipper) : c.gain;
+        tail.connect(c.dest);
+        tail.connect(c.split);
+        // Retour casque, pour s'entendre pendant le test du micro.
+        if (c.monitor) tail.connect(c.ctx.destination);
+    }
+
+    async function buildChain(stream) {
+        const input = stream.getAudioTracks()[0];
+        const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+        await ctx.resume().catch(() => {});
+        // Moteur audio bloqué : on rend le micro tel quel plutôt que du silence.
+        if (ctx.state !== "running") { ctx.close(); return null; }
+        const channels = A.stereo ? 2 : 1;
+        const src = ctx.createMediaStreamSource(stream);
+        const gain = ctx.createGain();
+        gain.gain.value = A.gain ?? 1;
+        const limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.value = -6;
+        limiter.knee.value = 3;
+        limiter.ratio.value = 20;
+        limiter.attack.value = 0.001;
+        limiter.release.value = 0.1;
+        const clipper = ctx.createWaveShaper();
+        clipper.curve = CLIP;
+        clipper.oversample = "4x";
+        const dest = ctx.createMediaStreamDestination();
+        for (const n of [gain, limiter, clipper, dest]) {
+            n.channelCount = channels;
+            n.channelCountMode = "explicit";
+            n.channelInterpretation = "speakers";
+        }
+        const split = ctx.createChannelSplitter(2);
+        const analysers = [0, 1].map(i => {
+            const an = ctx.createAnalyser();
+            an.fftSize = 2048;
+            an.smoothingTimeConstant = 0.55;
+            split.connect(an, i);
+            return an;
+        });
+        src.connect(gain);
+        const c = { ctx, input, gain, limiter, clipper, dest, split, analysers, channels };
+        wire(c);
+
+        // La piste rendue à Discord se présente comme le micro d'origine.
+        const out = dest.stream.getAudioTracks()[0];
+        out.getSettings = () => ({ ...input.getSettings(), channelCount: channels });
+        out.getCapabilities = () => input.getCapabilities();
+        out.getConstraints = () => input.getConstraints();
+        out.applyConstraints = cons => input.applyConstraints(cons);
+        Object.defineProperty(out, "label", { get: () => input.label });
+        const stop = out.stop.bind(out);
+        out.stop = () => {
+            stop();
+            stream.getTracks().forEach(t => t.stop());
+            chains.delete(c);
+            ctx.close();
+        };
+        input.addEventListener("ended", () => out.stop());
+        c.out = out;
+        chains.add(c);
+        return new MediaStream([out, ...stream.getVideoTracks()]);
+    }
+
     const md = navigator.mediaDevices;
     const getUserMedia = md.getUserMedia.bind(md);
     md.getUserMedia = async function (constraints) {
         if (constraints?.audio) constraints = { ...constraints, audio: micConstraints(constraints.audio) };
         const stream = await getUserMedia(constraints);
         stream.getAudioTracks().forEach(t => mics.add(t));
-        return stream;
+        if (!stream.getAudioTracks().length) return stream;
+        try {
+            return (await buildChain(stream)) || stream;
+        } catch (e) {
+            log("chaîne de gain indisponible, micro direct", e);
+            return stream;
+        }
     };
 
     const P = RTCPeerConnection.prototype;
@@ -134,6 +227,10 @@
     // Réglages modifiés dans Paramètres Plume, appliqués sans recharger.
     window.__plumeApply = async next => {
         A = { ...next };
+        for (const c of chains) {
+            c.gain.gain.setTargetAtTime(A.gain ?? 1, c.ctx.currentTime, 0.02);
+            wire(c);
+        }
         for (const t of mics) {
             if (t.readyState === "ended") { mics.delete(t); continue; }
             await t.applyConstraints(Object.fromEntries(PROCESSING.map(k => [k, !!A[k]]))).catch(() => {});
@@ -151,6 +248,7 @@
         const out = [];
         for (const [pc, sender] of audioSenders()) {
             const s = sender.track.getSettings();
+            const chain = [...chains].find(c => c.out === sender.track);
             const stats = await pc.getStats();
             const codecs = {};
             stats.forEach(r => r.type === "codec" && (codecs[r.id] = r));
@@ -161,6 +259,7 @@
                 const dt = prev ? (r.timestamp - prev.t) / 1000 : 0;
                 const codec = codecs[r.codecId];
                 out.push({
+                    gain: chain ? Math.round(chain.gain.gain.value * 100) : null,
                     canauxMicro: s.channelCount,
                     echoCancellation: s.echoCancellation,
                     noiseSuppression: s.noiseSuppression,
@@ -260,17 +359,12 @@
         return result;
     }
 
-    // Demandé par la fenêtre Paramètres Plume (via Rust).
-    window.__plumeProbe = async kind => {
-        let data;
-        try {
-            data = kind === "test" ? await selfTest(3) : await status();
-        } catch (e) {
-            data = { erreur: String(e) };
-        }
-        invoke("audio_report", { data }).catch(() => {});
-    };
+    // Dernière chaîne active (pour le visualiseur), la plus récente d'abord.
+    const activeChain = () => [...chains].filter(c => c.out.readyState === "live").pop() || null;
+    const inCall = () => audioSenders().some(([, s]) => [...chains].some(c => c.out === s.track));
 
-    window.plumeStereo = { mungeSdp, status, selfTest, get settings() { return A; } };
+    const setMonitor = (c, on) => { c.monitor = on; wire(c); };
+
+    window.plumeStereo = { mungeSdp, status, selfTest, activeChain, inCall, setMonitor, get settings() { return A; } };
     log("actif", A);
 })();

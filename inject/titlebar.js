@@ -41,12 +41,12 @@
 
         const btns = document.createElement("div");
         btns.id = "plume-winbtns";
-        for (const [act, cmd] of [["settings", "open_settings"], ["min", "win_minimize"], ["max", "win_toggle_maximize"], ["close", "win_close"]]) {
+        for (const [act, cmd] of [["settings", null], ["min", "win_minimize"], ["max", "win_toggle_maximize"], ["close", "win_close"]]) {
             const b = document.createElement("button");
             b.dataset.act = act;
             if (act === "settings") b.title = "Paramètres Plume";
             b.innerHTML = ICONS[act];
-            b.addEventListener("click", () => invoke(cmd));
+            b.addEventListener("click", () => (cmd ? invoke(cmd) : window.__plumeOpenPanel?.()));
             btns.appendChild(b);
         }
         document.body.appendChild(btns);

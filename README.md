@@ -28,7 +28,9 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | Interface officielle, à jour | ✅ | ✅ |
 | **Nightcord** (près de 490 plugins) ou **Equicord**, mis à jour tout seuls | ❌ | ✅ |
 | **Micro en stéréo**, Opus jusqu'à 510 kb/s | ❌ | ✅ |
-| **Paramètres audio complets** : débit, CBR, FEC, DTX, trame, traitements | ❌ | ✅ |
+| **Paramètres Plume intégrés à Discord** : débit, gain jusqu'à 800 %, limiteur, CBR, FEC, DTX, trame, traitements | ❌ | ✅ |
+| **Visualiseur** : niveaux gauche/droite, spectre, image stéréo, réduction du limiteur | ❌ | ✅ |
+| **Économie de mémoire** réglable + libération en arrière-plan | ❌ | ✅ |
 | **Push-to-talk global**, qui marche en jeu | ❌ | ✅ |
 | Barre de titre intégrée, logos Plume | ❌ | ✅ |
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
@@ -43,7 +45,7 @@ Mesurés avec [`scripts/ram.ps1`](scripts/ram.ps1), qui additionne **tous** les 
 | | Discord officiel | Plume |
 |---|---|---|
 | Taille installée | 514 Mo | **5,6 Mo** (+ WebView2, déjà dans Windows) |
-| Mémoire privée, connecté, fenêtre ouverte | ~1 750 Mo | **~770 Mo** |
+| Mémoire privée, connecté | ~1 750 Mo | **~605 Mo** |
 | Mémoire totale (working set), connecté | ~1 300-1 400 Mo | **~980 Mo** |
 | Mémoire privée, réduit dans la zone de notification | ~1 850 Mo | **~420 à 500 Mo** |
 
@@ -52,7 +54,15 @@ Mesurés avec [`scripts/ram.ps1`](scripts/ram.ps1), qui additionne **tous** les 
 > powershell -File scripts\ram.ps1 -Samples 10
 > ```
 
-Fenêtre cachée, Plume demande à WebView2 de libérer sa mémoire (`MemoryUsageTargetLevel = Low`). La RAM baisse alors d'environ moitié sans couper ni le vocal ni les notifications.
+Le gros de la mémoire, c'est Discord lui-même (ses serveurs, membres et messages) : sans aucun mod, la page pèse autant qu'avec Nightcord. Plume agit sur le moteur, dans **Paramètres Plume → Performances** :
+
+| Économie de mémoire | Mémoire privée mesurée | Contrepartie |
+|---|---|---|
+| Standard | ~700 Mo | — |
+| **Réduite** (défaut) : processus graphique intégré, JavaScript compact | **~605 Mo** | aucune visible |
+| Maximale : sans accélération graphique | ~560 Mo | vidéos et streams sur le processeur |
+
+Et quand Plume n'est plus au premier plan depuis 20 secondes (en jeu, par exemple), ou réduit dans la zone de notification, il demande à WebView2 de libérer ce qu'il peut (`MemoryUsageTargetLevel = Low`), sans couper ni le vocal ni les notifications.
 
 ## La stéréo, comment ça marche
 
@@ -78,23 +88,35 @@ await plumeStereo.status()     // pendant un appel : canaux du micro, ligne Opus
 
 > ⚠️ L'annulation d'écho étant coupée, **utilise un casque**. Sinon tes correspondants s'entendront dans ton micro.
 
-## Paramètres audio
+## Paramètres Plume
 
-Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone de notification → **Paramètres Plume…**. Tout est enregistré dès que tu le changes.
+Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone de notification → **Paramètres Plume…**. Le panneau s'ouvre **dans Discord**, à son style (Échap pour fermer). Tout est enregistré dès que tu le changes et conservé au redémarrage.
+
+**Audio**
 
 | Réglage | Valeurs | Appliqué |
 |---|---|---|
 | Préréglage | Voix 96 · Haute 192 · Studio 320 · Maximum 510 kb/s | — |
+| Gain du micro | 0 à 800 % (+18 dB), au-delà du maximum de Discord | en direct |
+| Limiteur | compresseur + écrêteur de sécurité : jamais au-dessus de 0 dBFS | en direct |
 | Débit Opus | 32 à 510 kb/s | en direct |
 | Stéréo | oui / non | prochain appel |
 | Taille de trame | 10, 20, 40, 60 ms | prochain appel |
-| Débit constant (CBR) | oui / non | prochain appel |
-| Correction d'erreurs (FEC) | oui / non | prochain appel |
-| Silences allégés (DTX) | oui / non | prochain appel |
+| Débit constant (CBR), correction d'erreurs (FEC), silences allégés (DTX) | chacun oui / non | prochain appel |
 | Priorité réseau haute | oui / non | en direct |
 | Annulation d'écho, suppression de bruit, gain auto | chacun oui / non | en direct |
 
-La fenêtre affiche aussi ce qui part réellement pendant un appel (canaux, débit réel, ligne Opus négociée) et lance l'auto-test.
+**Visualiseur** : niveaux crête gauche/droite en dBFS, spectre 20 Hz – 20 kHz par canal, image stéréo (corrélation gauche/droite), réduction appliquée par le limiteur. Il mesure le signal après le gain et le limiteur, c'est-à-dire exactement ce que Discord reçoit. Hors appel, **Tester mon micro** l'alimente sans rien envoyer, avec retour casque en option.
+
+**Diagnostic** : en appel, ce qui part réellement (canaux, débit réel, ligne Opus négociée) ; et l'auto-test.
+
+Gain et limiteur, mesurés avec un signal à 0 dBFS :
+
+| Gain | Limiteur | Crête en sortie |
+|---|---|---|
+| 400 % | coupé | +13,1 dB (saturation) |
+| 400 % | actif | 0,0 dB (−16,9 dB de réduction) |
+| 800 % | actif | −0,1 dB (−22,5 dB de réduction) |
 
 **Mesuré dans WebView2** avec l'auto-test (bruit blanc envoyé à gauche seulement) :
 
@@ -123,7 +145,7 @@ Télécharge `Plume_x.y.z_x64-setup.exe` dans les [Releases](../../releases) et 
 
 Clic droit sur l'icône dans la zone de notification :
 
-- **Paramètres Plume…** : la fenêtre des réglages audio.
+- **Paramètres Plume…** : ouvre le panneau dans Discord.
 - **Stéréo micro** : active ou coupe la stéréo.
 - **Mod** : Nightcord, Equicord ou aucun.
 - **Recharger** : recharge Discord.
@@ -135,6 +157,8 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
   "mod": "nightcord",
   "audio": {
     "stereo": true,
+    "gain": 1.0,
+    "limiter": true,
     "bitrate": 510000,
     "frameMs": 20,
     "cbr": true,
@@ -145,6 +169,8 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
     "autoGainControl": false,
     "highPriority": true
   },
+  "memory": "reduced",
+  "trimInBackground": true,
   "pttKeys": []
 }
 ```
@@ -153,6 +179,8 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
 |---|---|
 | `mod` | `nightcord`, `equicord` ou `none` : extension officielle du mod, chargée telle quelle dans WebView2, rafraîchie toutes les 6 h |
 | `audio` | tous les réglages du micro, modifiables dans **Paramètres Plume** |
+| `memory` | `standard`, `reduced` ou `max` (redémarrage) |
+| `trimInBackground` | libère la mémoire quand Plume n'est pas au premier plan |
 | `pttKeys` | combinaison PTT forcée en codes VK ; vide = touche réglée dans Discord |
 
 Pour lancer Plume au démarrage de Windows, place un raccourci vers `plume.exe --minimized` dans `shell:startup`.
@@ -184,18 +212,17 @@ src-tauri/src/
   mods.rs       téléchargement et cache des extensions Nightcord / Equicord
   ptt.rs        surveillance globale de la touche PTT
   config.rs     config.json
-  settings.rs   fenêtre Paramètres Plume, application des réglages à chaud
-dist/
-  settings.html fenêtre Paramètres Plume
+  settings.rs   application des réglages (à chaud, rechargement ou redémarrage)
 inject/
   shim.js       notifications Windows natives
-  stereo.js     réglages audio WebRTC (stéréo, débit, trame…) + diagnostic
+  stereo.js     audio WebRTC : gain, limiteur, stéréo, débit, trame… + diagnostic
+  panel.js      Paramètres Plume dans Discord, visualiseur
   ptt.js        branchement du PTT global sur le moteur vocal de Discord
   brand.js      logo et nom Plume à la place de ceux de Discord
   titlebar.js   boutons de fenêtre intégrés (fenêtre sans cadre Windows)
 ```
 
-La page Discord n'a accès qu'à une poignée de commandes ([`capabilities/discord.json`](src-tauri/capabilities/discord.json)) : notification, ouverture de lien, touche PTT, boutons de fenêtre, et lecture des réglages audio. Modifier la configuration est réservé à la fenêtre Paramètres ([`capabilities/settings.json`](src-tauri/capabilities/settings.json)).
+La page Discord n'a accès qu'à une poignée de commandes ([`capabilities/discord.json`](src-tauri/capabilities/discord.json)) : notification, ouverture de lien, touche PTT, boutons de fenêtre, et lecture des réglages audio. Elle peut aussi lire et modifier la configuration de Plume, pour le panneau Paramètres.
 
 ## Avertissement
 

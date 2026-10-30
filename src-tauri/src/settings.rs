@@ -1,28 +1,21 @@
-//! Fenêtre « Paramètres Plume » (dist/settings.html) et application des
-//! réglages : à chaud pour l'audio, en rechargeant Discord pour le mod.
+//! Application des réglages : à chaud pour l'audio, en rechargeant Discord pour
+//! le mod, en redémarrant Plume pour l'économie de mémoire (les arguments du
+//! moteur WebView2 sont fixés à son lancement).
+//! Le panneau lui-même vit dans la page Discord (inject/panel.js).
 
-use std::sync::mpsc;
 use std::sync::Mutex;
-use std::time::Duration;
 
-use serde_json::Value;
 use tauri::menu::CheckMenuItem;
-use tauri::{AppHandle, Manager, Wry, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, Wry};
 
 use crate::config::{Audio, Config};
 use crate::mods::{self, ClientMod};
-
-const SETTINGS: &str = "settings";
 
 /// Cases à cocher du menu de la zone de notification, gardées en phase.
 pub struct TrayItems {
     pub stereo: CheckMenuItem<Wry>,
     pub mods: Vec<(ClientMod, CheckMenuItem<Wry>)>,
 }
-
-/// Réponse attendue de la page Discord pour un `audio_probe` en cours.
-#[derive(Default)]
-pub struct ProbeSlot(Mutex<Option<mpsc::Sender<Value>>>);
 
 pub fn current(app: &AppHandle) -> Config {
     app.state::<Mutex<Config>>().lock().unwrap().clone()
@@ -31,10 +24,10 @@ pub fn current(app: &AppHandle) -> Config {
 /// Enregistre et applique une config complète.
 pub fn apply(app: &AppHandle, mut next: Config) {
     next.sanitize();
-    let previous_mod = {
+    let previous = {
         let state = app.state::<Mutex<Config>>();
         let mut cfg = state.lock().unwrap();
-        std::mem::replace(&mut *cfg, next.clone()).client_mod
+        std::mem::replace(&mut *cfg, next.clone())
     };
     next.save(app);
     if let Some(items) = app.try_state::<TrayItems>() {
@@ -43,7 +36,10 @@ pub fn apply(app: &AppHandle, mut next: Config) {
             let _ = item.set_checked(next.client_mod == *m);
         }
     }
-    if next.client_mod != previous_mod {
+    if next.memory != previous.memory {
+        app.restart();
+    }
+    if next.client_mod != previous.client_mod {
         mods::refresh_in_background(app.clone(), next.client_mod);
         crate::restart_main(app);
     } else if let Some(w) = app.get_webview_window(crate::MAIN) {
@@ -52,31 +48,12 @@ pub fn apply(app: &AppHandle, mut next: Config) {
     }
 }
 
+/// Affiche Discord et ouvre le panneau Paramètres Plume dedans.
 pub fn open(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(SETTINGS) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-        return;
+    crate::show_main(app);
+    if let Some(w) = app.get_webview_window(crate::MAIN) {
+        let _ = w.eval("window.__plumeOpenPanel && window.__plumeOpenPanel()");
     }
-    let built = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("settings.html".into()))
-        .title("Paramètres Plume")
-        .inner_size(600.0, 780.0)
-        .min_inner_size(520.0, 520.0)
-        .background_color(tauri::window::Color(0x1a, 0x1a, 0x1e, 0xff))
-        // Même environnement WebView2 que la fenêtre Discord, sinon refus.
-        .browser_extensions_enabled(true)
-        .build();
-    if let Err(e) = built {
-        eprintln!("[plume] fenêtre Paramètres : {e}");
-    }
-}
-
-// Asynchrone exprès : créer une fenêtre depuis une commande synchrone bloque
-// la boucle d'événements sous Windows.
-#[tauri::command]
-pub async fn open_settings(app: AppHandle) {
-    open(&app);
 }
 
 #[tauri::command]
@@ -94,26 +71,4 @@ pub fn set_config(app: AppHandle, config: Config) {
 #[tauri::command]
 pub fn audio_config(app: AppHandle) -> Audio {
     current(&app).audio
-}
-
-/// Demande à la page Discord l'état de l'audio (`status`) ou un auto-test
-/// (`test`), et attend sa réponse.
-#[tauri::command]
-pub async fn audio_probe(app: AppHandle, kind: String) -> Result<Value, String> {
-    let kind = if kind == "test" { "test" } else { "status" };
-    let w = app.get_webview_window(crate::MAIN).ok_or("Discord n'est pas ouvert")?;
-    let (tx, rx) = mpsc::channel();
-    *app.state::<ProbeSlot>().0.lock().unwrap() = Some(tx);
-    w.eval(format!("window.__plumeProbe && window.__plumeProbe({kind:?})")).map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(12)))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|_| "pas de réponse de Discord".into())
-}
-
-#[tauri::command]
-pub fn audio_report(data: Value, slot: tauri::State<ProbeSlot>) {
-    if let Some(tx) = slot.0.lock().unwrap().take() {
-        let _ = tx.send(data);
-    }
 }

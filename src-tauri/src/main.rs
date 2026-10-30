@@ -82,7 +82,7 @@ fn ptt_keys(keys: Vec<i32>, state: tauri::State<ptt::PttKeys>) {
     *state.0.lock().unwrap() = keys;
 }
 
-fn show_main(app: &AppHandle) {
+pub(crate) fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
         native::set_memory_low(&w, false);
         let _ = w.show();
@@ -100,6 +100,7 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
         include_str!("../../inject/ptt.js").to_string(),
         include_str!("../../inject/brand.js").to_string(),
         include_str!("../../inject/titlebar.js").to_string(),
+        include_str!("../../inject/panel.js").to_string(),
     ]
 }
 
@@ -111,6 +112,7 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
         .title("Plume")
         .background_color(Color(0x1a, 0x1a, 0x1e, 0xff))
         .browser_extensions_enabled(true)
+        .additional_browser_args(&cfg.memory.browser_args())
         .inner_size(1280.0, 800.0)
         .min_inner_size(940.0, 500.0)
         .visible(false)
@@ -203,6 +205,28 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Plume quitte le premier plan (un jeu, par exemple) : après 20 s, WebView2
+/// libère ce qu'il peut. Revenir dessus rétablit le niveau normal.
+fn background_trim(app: &AppHandle, focused: bool) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    let gen = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let Some(w) = app.get_webview_window(MAIN) else { return };
+    if focused {
+        native::set_memory_low(&w, false);
+        return;
+    }
+    if !settings::current(app).trim_in_background {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        if GENERATION.load(Ordering::SeqCst) == gen {
+            native::set_memory_low(&w, true);
+        }
+    });
+}
+
 pub(crate) fn restart_main(app: &AppHandle) {
     let app = app.clone();
     // Hors du gestionnaire d'événement, sinon la destruction bloque la boucle.
@@ -250,15 +274,11 @@ fn main() {
             win_minimize,
             win_toggle_maximize,
             win_close,
-            settings::open_settings,
             settings::get_config,
             settings::set_config,
-            settings::audio_config,
-            settings::audio_probe,
-            settings::audio_report
+            settings::audio_config
         ])
         .manage(ptt::PttKeys::default())
-        .manage(settings::ProbeSlot::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = Config::load(&handle);
@@ -276,6 +296,11 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let WindowEvent::Focused(focused) = event {
+                if window.label() == MAIN {
+                    background_trim(window.app_handle(), *focused);
+                }
+            }
             // Alt+F4 et la fermeture depuis la barre des tâches passent aussi ici.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == MAIN {
