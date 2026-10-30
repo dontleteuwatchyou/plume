@@ -23,8 +23,11 @@ if (-not (Test-Path $gh)) { $gh = 'gh' }
 
 Write-Host "Compilation et signature de Plume $version…"
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $Key -Raw
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
-npx tauri build
+# La clé n'a pas de mot de passe, mais Tauri le demande si la variable
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD n'existe pas. Windows PowerShell supprime
+# une variable qu'on vide et ne transmet pas les valeurs vides : c'est Node qui
+# lance la compilation, avec la variable bien présente et vide.
+node -e "process.exitCode = require('child_process').spawnSync('npx tauri build', { shell: true, stdio: 'inherit', env: { ...process.env, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' } }).status"
 if ($LASTEXITCODE) { throw "échec de la compilation" }
 
 $setup = "src-tauri\target\release\bundle\nsis\Plume_${version}_x64-setup.exe"
