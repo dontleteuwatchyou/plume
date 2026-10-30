@@ -6,6 +6,7 @@ mod native;
 mod ptt;
 mod settings;
 mod update;
+mod wordbomb;
 
 use std::sync::Mutex;
 
@@ -117,6 +118,7 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
         include_str!("../../inject/brand.js").to_string(),
         include_str!("../../inject/titlebar.js").to_string(),
         include_str!("../../inject/panel.js").to_string(),
+        include_str!("../../inject/wordbomb.js").to_string(),
     ]
 }
 
@@ -286,7 +288,8 @@ fn main() {
             settings::rnnoise_wasm,
             update::update_check,
             update::update_pending,
-            update::update_install
+            update::update_install,
+            wordbomb::wordbomb_type
         ])
         .manage(ptt::PttKeys::default())
         .manage(update::Pending::default())

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wordbomb-type"
+description = "Enables the wordbomb_type command without any pre-configured scope."
+commands.allow = ["wordbomb_type"]
+
+[[permission]]
+identifier = "deny-wordbomb-type"
+description = "Denies the wordbomb_type command without any pre-configured scope."
+commands.deny = ["wordbomb_type"]

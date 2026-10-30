@@ -225,6 +225,7 @@ src-tauri/src/
   config.rs     config.json
   settings.rs   application des réglages (à chaud, rechargement ou redémarrage)
   update.rs     mise à jour automatique (releases GitHub, paquets signés)
+  wordbomb.rs   frappe dans l'Activity WordBomb via le DevTools Protocol de WebView2
 inject/
   shim.js       notifications Windows natives
   stereo.js     audio WebRTC : RNNoise, égaliseur, gain, limiteur, stéréo, débit, trame… + diagnostic
@@ -234,6 +235,7 @@ inject/
   theme.js      application du thème + réglage dans Paramètres Discord → Apparence
   brand.js      logo et nom Plume à la place de ceux de Discord
   titlebar.js   boutons de fenêtre intégrés (fenêtre sans cadre Windows)
+  wordbomb.js   assistant WordBomb / BombParty (le plugin Nightcord n'existe pas en web)
 ```
 
 La page Discord n'a accès qu'à une poignée de commandes ([`capabilities/discord.json`](src-tauri/capabilities/discord.json)) : notification, ouverture de lien, touche PTT, boutons de fenêtre, et lecture des réglages audio. Elle peut aussi lire et modifier la configuration de Plume, pour le panneau Paramètres.
