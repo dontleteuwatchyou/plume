@@ -1,4 +1,4 @@
-# Publie une version de Plume sur GitHub, prête pour la mise à jour automatique.
+﻿# Publie une version de Plume sur GitHub, prête pour la mise à jour automatique.
 #   powershell -File scripts\release.ps1 -NotesFile notes\0.3.12.md
 #   (ou -Notes "Ce qui change" pour une ligne)
 #
