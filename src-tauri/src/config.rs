@@ -52,8 +52,11 @@ impl MemoryMode {
         let v8 = r#"--js-flags="--optimize-for-size --max-semi-space-size=2""#;
         match self {
             MemoryMode::Standard => base.into(),
-            // Le processus graphique tourne dans le processus principal.
-            MemoryMode::Reduced => format!("{base} --in-process-gpu {v8}"),
+            // Pas de `--in-process-gpu` : la carte graphique dans le processus
+            // principal faisait saccader la page (mesuré sur un serveur de
+            // 500 000 membres : 18 à 56 blocages de plus de 50 ms en 15 s, contre
+            // 0 à 2 sans), pour un gain de mémoire négligeable.
+            MemoryMode::Reduced => format!("{base} {v8}"),
             // Rendu logiciel : le moins de mémoire, plus de processeur.
             MemoryMode::Max => format!("{base} --disable-gpu {v8}"),
         }

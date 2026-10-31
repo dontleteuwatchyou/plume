@@ -191,7 +191,13 @@ fn build_discord(app: &AppHandle, cfg: &Config, label: &str, profile: Option<std
             false
         })
         .on_new_window(move |url, _| {
-            open_external(&popup_app, url.as_str());
+            // Fichier joint (zip, exe, pdf…) : téléchargé par Plume, comme
+            // l'appli, plutôt qu'ouvert dans le navigateur.
+            if save::is_attachment(&url) {
+                save::download_in_background(&popup_app, url);
+            } else {
+                open_external(&popup_app, url.as_str());
+            }
             NewWindowResponse::Deny
         })
         // Téléchargements (« Enregistrer l'image »…) : la fenêtre de
