@@ -121,21 +121,30 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
 }
 
 /// Vérification au démarrage, une fois Discord chargé.
+/// Vérification en fond, sans rien demander : 15 s après le lancement, puis
+/// toutes les 6 h. Une version trouvée allume la pastille et affiche la carte
+/// « Mise à jour disponible » dans Plume (inject/titlebar.js) ; fenêtre
+/// cachée, une notification Windows en plus.
 pub fn check_on_startup(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        tokio_sleep(30).await;
-        let Ok(Some(update)) = check(&app).await else { return };
-        // Fenêtre ouverte : la bulle Plume suffit. Cachée : notification Windows.
-        let hidden = app.get_webview_window(crate::MAIN).map(|w| !w.is_visible().unwrap_or(false)).unwrap_or(true);
-        if hidden {
-            let _ = app
-                .notification()
-                .builder()
-                .title(format!("Plume {} est disponible", update.version))
-                .body("Paramètres Plume → Mises à jour pour l'installer.")
-                .show();
+        tokio_sleep(15).await;
+        let mut announced: Option<String> = None;
+        loop {
+            if let Ok(Some(update)) = check(&app).await {
+                let hidden = app.get_webview_window(crate::MAIN).map(|w| !w.is_visible().unwrap_or(false)).unwrap_or(true);
+                if hidden && announced.as_deref() != Some(update.version.as_str()) {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title(format!("Plume {} est disponible", update.version))
+                        .body("Ouvre Plume et clique sur la carte « Mise à jour disponible ».")
+                        .show();
+                }
+                announced = Some(update.version.clone());
+                remember(&app, Some(update.version));
+            }
+            tokio_sleep(6 * 3600).await;
         }
-        remember(&app, Some(update.version.clone()));
     });
 }
 

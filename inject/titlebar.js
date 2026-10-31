@@ -26,14 +26,20 @@
 #plume-winbtns button:hover { background: var(--background-modifier-hover, rgba(255,255,255,.08)); color: var(--interactive-hover, #fff); }
 #plume-winbtns button[data-act="close"]:hover { background: #da373c; color: #fff; }
 #plume-winbtns button[data-act="settings"] { position: relative; }
-#plume-update-bubble { position: fixed; top: 46px; left: 50%; z-index: 2147483600; display: flex; align-items: center; gap: 10px;
-  padding: 8px 8px 8px 14px; border-radius: 12px; color: #fff; font: 500 14px/1.2 var(--font-primary, "gg sans", "Segoe UI", sans-serif);
-  background: linear-gradient(135deg, #8b7cf6, #5b4bd0); box-shadow: 0 10px 30px rgb(46 33 120 / .5);
-  opacity: 0; transform: translate(-50%, -12px); transition: opacity .25s ease, transform .25s ease; -webkit-app-region: no-drag; app-region: no-drag; }
-#plume-update-bubble.on { opacity: 1; transform: translate(-50%, 0); }
-#plume-update-bubble button { border: 0; border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; color: #fff; background: rgb(255 255 255 / .18); }
-#plume-update-bubble button:hover { background: rgb(255 255 255 / .28); }
-#plume-update-bubble button[data-a="close"] { padding: 6px 9px; background: transparent; }
+#plume-update-card { position: fixed; right: 16px; bottom: 16px; z-index: 2147483600; width: 340px; display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 14px 14px 16px; border-radius: 12px; cursor: pointer; color: var(--header-primary, #f2f3f5);
+  font: 400 14px/1.35 var(--font-primary, "gg sans", "Segoe UI", sans-serif); background: var(--background-floating, #111214);
+  border: 1px solid rgb(139 124 246 / .5); box-shadow: 0 12px 36px rgb(0 0 0 / .45);
+  -webkit-app-region: no-drag; app-region: no-drag; }
+#plume-update-card:hover { border-color: #8b7cf6; }
+#plume-update-card .ic { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #8b7cf6, #5b4bd0); }
+#plume-update-card .tx { flex: 1; min-width: 0; }
+#plume-update-card .t { font-weight: 700; margin-bottom: 2px; }
+#plume-update-card .d { color: var(--text-muted, #b5bac1); }
+#plume-update-card .go { display: inline-block; margin-top: 10px; padding: 6px 12px; border-radius: 8px; font-weight: 600; color: #fff; background: #8b7cf6; }
+#plume-update-card:hover .go { background: #7a6af0; }
+#plume-update-card .x { flex: none; border: 0; background: transparent; color: var(--interactive-normal, #b5bac1); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+#plume-update-card .x:hover { color: var(--interactive-hover, #fff); background: rgb(255 255 255 / .08); }
 /* Bouton Plume dans le panneau du compte, en bas à gauche, juste avant la
    roue des paramètres de Discord : les réglages au même endroit. */
 #plume-user { position: relative; flex: none; width: 32px; height: 32px; border: 0; padding: 0; border-radius: 8px; cursor: pointer;
@@ -82,10 +88,10 @@
             while (slot.parentElement && slot.parentElement.children.length === 1) slot = slot.parentElement;
             if (slot.previousElementSibling !== user) slot.before(user);
         };
-        // Mise à jour en attente : pastille verte sur le bouton plume, et une
-        // bulle en haut au centre (une fois par lancement), loin des
-        // notifications de Nightcord en bas à droite.
-        let bubbleShown = false;
+        // Mise à jour en attente : pastille verte sur les boutons Plume, et une
+        // carte en bas à droite qui reste jusqu'à ce qu'on la ferme. Un clic
+        // sur la carte ouvre directement Paramètres Plume → Mises à jour.
+        let dismissed = null;
         window.__plumeUpdateAvailable = version => {
             window.__plumeUpdateVersion = version;
             const b = btns.querySelector('[data-act="settings"]');
@@ -93,20 +99,18 @@
             user.dataset.update = version;
             user.title = `Paramètres Plume — Plume ${version} disponible`;
             b.title = `Paramètres Plume — Plume ${version} disponible`;
-            if (bubbleShown) return;
-            bubbleShown = true;
-            const bubble = document.createElement("div");
-            bubble.id = "plume-update-bubble";
-            bubble.setAttribute("role", "status");
-            bubble.innerHTML = `<svg width="18" height="18" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M742 236c-148 18-286 112-354 260-38 82-54 170-56 256l-60 92 34 22 58-88c84-6 170-30 244-80 140-94 196-272 134-462z" fill="#fff"/></svg>
-<span>Plume <b></b> est disponible</span><button data-a="see">Voir</button><button data-a="close" aria-label="Fermer">✕</button>`;
-            bubble.querySelector("b").textContent = version;
-            const hide = () => { bubble.classList.remove("on"); setTimeout(() => bubble.remove(), 250); };
-            bubble.querySelector('[data-a="see"]').addEventListener("click", () => { hide(); window.__plumeOpenPanel?.("update"); });
-            bubble.querySelector('[data-a="close"]').addEventListener("click", hide);
-            document.body.appendChild(bubble);
-            requestAnimationFrame(() => bubble.classList.add("on"));
-            setTimeout(hide, 15000);
+            if (dismissed === version || document.getElementById("plume-update-card")) return;
+            const card = document.createElement("div");
+            card.id = "plume-update-card";
+            card.setAttribute("role", "alert");
+            card.innerHTML = `<div class="ic"><svg width="20" height="20" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M742 236c-148 18-286 112-354 260-38 82-54 170-56 256l-60 92 34 22 58-88c84-6 170-30 244-80 140-94 196-272 134-462z" fill="#fff"/></svg></div>
+<div class="tx"><div class="t">Mise à jour disponible</div><div class="d">Plume <b></b> est prêt. Clique ici pour l'installer.</div><span class="go">Mettre à jour</span></div>
+<button class="x" aria-label="Fermer">✕</button>`;
+            card.querySelector("b").textContent = version;
+            const hide = () => card.remove();
+            card.querySelector(".x").addEventListener("click", e => { e.stopPropagation(); dismissed = version; hide(); });
+            card.addEventListener("click", () => { hide(); window.__plumeOpenPanel?.("update"); });
+            document.body.appendChild(card);
         };
         // L'état vit côté Plume : on le redemande à chaque chargement de page.
         window.__TAURI_INTERNALS__.invoke("update_pending").then(v => v && window.__plumeUpdateAvailable(v)).catch(() => {});
