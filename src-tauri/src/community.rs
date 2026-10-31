@@ -18,7 +18,7 @@ use tauri::AppHandle;
 
 /// Adresse du Worker une fois déployé (voir community/README.md).
 /// Vide : la section Communauté indique qu'il n'est pas encore configuré.
-pub const URL: &str = "";
+pub const URL: &str = "https://plume-community.plumeapp.workers.dev";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Profile {

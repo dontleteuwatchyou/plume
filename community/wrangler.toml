@@ -6,4 +6,4 @@ compatibility_date = "2026-10-01"
 binding = "DB"
 database_name = "plume-community"
 # Remplacé par l'identifiant affiché par « npx wrangler d1 create plume-community ».
-database_id = "A-REMPLACER"
+database_id = "3fdfe459-39a7-4b4a-90aa-8a6ebb46464a"
