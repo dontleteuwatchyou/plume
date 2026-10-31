@@ -10,6 +10,7 @@ L'interface officielle de Discord dans une coque Tauri de 5 Mo, avec Nightcord (
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-4c3fb8)
 ![Tauri](https://img.shields.io/badge/Tauri-2-8b7cf6)
 ![Licence](https://img.shields.io/badge/licence-GPL--3.0-6b5ce0)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/forsakengh)
 
 </div>
 
