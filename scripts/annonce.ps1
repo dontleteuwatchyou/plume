@@ -39,9 +39,13 @@ $list = @(@([pscustomobject]$item) + $list | Select-Object -First 20)
 # UTF-8 sans BOM, et toujours un tableau (meme avec un seul message).
 [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $list -Depth 4), [Text.UTF8Encoding]::new($false))
 
-git pull --rebase --quiet
+# Chaque etape verifiee : on n'annonce "envoyee" que si le push a marche.
+# --autostash : d'autres fichiers modifies dans le depot ne bloquent pas l'envoi.
+git pull --rebase --autostash --quiet
+if ($LASTEXITCODE) { throw "mise a jour depuis GitHub echouee (git pull)" }
 git add announcements.json
 git commit --quiet -m "Annonce : $Titre"
+if ($LASTEXITCODE) { throw "commit echoue" }
 git push --quiet
-if ($LASTEXITCODE) { throw "envoi sur GitHub echoue" }
+if ($LASTEXITCODE) { throw "envoi sur GitHub echoue (git push)" }
 Write-Host "Annonce envoyee. Elle arrive chez tous les utilisateurs de Plume d'ici 10 a 15 minutes." -ForegroundColor Green
