@@ -74,6 +74,7 @@ pub fn set_config(app: AppHandle, mut config: Config) {
     config.ram_widget.y = cur.ram_widget.y;
     config.community.id = cur.community.id;
     config.plugins_cleared |= cur.plugins_cleared;
+    config.listed_by_default |= cur.listed_by_default;
     apply(&app, config);
 }
 

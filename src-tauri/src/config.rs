@@ -40,6 +40,11 @@ pub struct Config {
     /// qui étaient sur Nightcord ; Equicord et « aucun » restent un choix.
     #[serde(rename = "plumecordMigrated", default)]
     pub plumecord_migrated: bool,
+    /// La liste Communauté est passée « activée par défaut » en 0.3.13. Faux
+    /// dans les configs d'avant : leur case décochée était l'ancien défaut,
+    /// pas un choix, on l'active donc une fois.
+    #[serde(rename = "listedByDefault", default)]
+    pub listed_by_default: bool,
     pub community: Community,
     /// Veille : Discord déchargé quand Plume ne sert pas (sleep.rs).
     pub sleep: SleepCfg,
@@ -99,6 +104,8 @@ impl Default for RamWidget {
 #[serde(default)]
 pub struct Community {
     pub id: String,
+    /// Apparaître dans la liste des utilisateurs (pseudo + avatar Discord).
+    /// Activé par défaut, décochable dans Paramètres Plume → Communauté.
     pub listed: bool,
     /// Badge Plume sur le profil, visible des autres utilisateurs de Plume :
     /// envoie l'identifiant Discord (rien d'autre) au serveur.
@@ -107,7 +114,7 @@ pub struct Community {
 
 impl Default for Community {
     fn default() -> Self {
-        Self { id: String::new(), listed: false, badge: true }
+        Self { id: String::new(), listed: true, badge: true }
     }
 }
 
@@ -209,6 +216,7 @@ impl Default for Config {
             ram_widget: RamWidget::default(),
             plugins_cleared: true,
             plumecord_migrated: true,
+            listed_by_default: true,
             community: Community::default(),
             sleep: SleepCfg::default(),
         }
@@ -285,6 +293,11 @@ impl Config {
             cfg.plumecord_migrated = true;
             dirty = true;
         }
+        if !cfg.listed_by_default {
+            cfg.community.listed = true;
+            cfg.listed_by_default = true;
+            dirty = true;
+        }
         if cfg.community.id.len() != 32 {
             cfg.community.id = random_id();
             dirty = true;
@@ -327,5 +340,9 @@ mod tests {
         // Nouvelle installation : Plumecord, déjà migrée.
         let fresh = Config::default();
         assert!(fresh.plumecord_migrated && fresh.client_mod == ClientMod::Plumecord);
+        // Liste Communauté : activée par défaut, et les configs d'avant la 0.3.13
+        // (sans listedByDefault) seront basculées une fois au chargement.
+        assert!(fresh.community.listed && fresh.listed_by_default);
+        assert!(!old.listed_by_default);
     }
 }

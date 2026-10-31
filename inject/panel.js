@@ -227,7 +227,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
   <div class="stat"><div class="k">Installations au total</div><div class="v big" id="comTotal">—</div></div>
 </div>
 <h4>Visibilité</h4>
-<div class="row"><div><div class="t">Apparaître dans la liste des utilisateurs</div><div class="d">Ton pseudo et ton avatar Discord deviennent visibles pour les autres utilisateurs de Plume. Décoché, tu es seulement compté, avec un identifiant au hasard qui ne dit rien de toi. Tu peux décocher à tout moment : ton profil est alors retiré du serveur.</div></div><label class="sw"><input type="checkbox" id="comListed"><span></span></label></div>
+<div class="row"><div><div class="t">Apparaître dans la liste des utilisateurs</div><div class="d">Activé par défaut : ton pseudo et ton avatar Discord sont visibles pour les autres utilisateurs de Plume. Décoché, tu es seulement compté, avec un identifiant au hasard qui ne dit rien de toi, et ton profil est retiré du serveur.</div></div><label class="sw"><input type="checkbox" id="comListed"><span></span></label></div>
 <div class="row"><div><div class="t">Badge Plume sur ton profil</div><div class="d">Un petit badge Plume sur ton profil, que seuls les utilisateurs de Plume voient (et toi le leur). Pour ça, ton identifiant Discord (rien d'autre) est envoyé au serveur Communauté. Décoché, il en est effacé.</div></div><label class="sw"><input type="checkbox" id="comBadge"><span></span></label></div>
 <h4 id="comListTitle">Utilisateurs de Plume</h4>
 <div class="users" id="comUsers"></div>
