@@ -3,6 +3,7 @@
 mod activity;
 mod badge;
 mod capture;
+mod community;
 #[cfg(windows)]
 mod loopback;
 mod config;
@@ -11,9 +12,11 @@ mod native;
 mod protocol;
 mod ptt;
 mod recorder;
+mod ram;
 mod rpc;
 mod save;
 mod settings;
+mod sleep;
 mod update;
 mod wordbomb;
 
@@ -49,7 +52,7 @@ pub(crate) fn splash_status(w: &WebviewWindow, text: &str) {
     let _ = w.eval(format!("window.plumeSplash && window.plumeSplash.status({text})"));
 }
 
-fn is_discord(url: &Url) -> bool {
+pub(crate) fn is_discord(url: &Url) -> bool {
     match url.scheme() {
         "about" | "blob" | "data" => return true,
         "https" => {}
@@ -104,6 +107,10 @@ fn win_close(window: WebviewWindow) {
 fn hide_to_tray(window: &WebviewWindow) {
     let _ = window.hide();
     native::set_memory_low(window, true);
+    native::set_rendering(window, false);
+    if window.label() == MAIN {
+        sleep::schedule(window.app_handle());
+    }
 }
 
 #[tauri::command]
@@ -114,6 +121,8 @@ fn ptt_keys(keys: Vec<i32>, state: tauri::State<ptt::PttKeys>) {
 pub(crate) fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
         native::set_memory_low(&w, false);
+        native::set_rendering(&w, true);
+        sleep::wake(app);
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
@@ -136,6 +145,10 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
         include_str!("../../inject/brand.js").to_string(),
         include_str!("../../inject/titlebar.js").to_string(),
         include_str!("../../inject/panel.js").to_string(),
+        include_str!("../../inject/ram.js").to_string(),
+        include_str!("../../inject/sleep.js").to_string(),
+        include_str!("../../inject/badge.js").to_string(),
+        include_str!("../../inject/plugins.js").to_string(),
         include_str!("../../inject/wordbomb.js").to_string(),
     ]
 }
@@ -148,6 +161,7 @@ fn build_main(app: &AppHandle, cfg: &Config) -> tauri::Result<WebviewWindow> {
 /// avec son propre profil WebView2, donc sa propre session Discord.
 pub(crate) fn open_second_account(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(SECOND) {
+        native::set_rendering(&w, true);
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
@@ -320,8 +334,10 @@ fn background_trim(app: &AppHandle, focused: bool) {
     let Some(w) = app.get_webview_window(MAIN) else { return };
     if focused {
         native::set_memory_low(&w, false);
+        sleep::wake(app);
         return;
     }
+    sleep::schedule(app);
     if !settings::current(app).trim_in_background {
         return;
     }
@@ -371,7 +387,12 @@ fn main() {
             win_toggle_maximize,
             win_close,
             settings::get_config,
+            sleep::sleep_busy,
             settings::set_config,
+            settings::set_ram_position,
+            settings::plugins_cleared,
+            ram::ram_usage,
+            community::community_sync,
             settings::audio_config,
             settings::rnnoise_worklet,
             settings::rnnoise_wasm,
@@ -392,6 +413,7 @@ fn main() {
         ])
         .manage(ptt::PttKeys::default())
         .manage(update::Pending::default())
+        .manage(sleep::Sleep::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = Config::load(&handle);
@@ -401,6 +423,7 @@ fn main() {
             // --minimized : démarrage directement dans la zone de notification.
             if std::env::args().any(|a| a == "--minimized") {
                 native::set_memory_low(&main, true);
+                native::set_rendering(&main, false);
             } else {
                 main.show()?;
             }
@@ -410,6 +433,7 @@ fn main() {
             protocol::register();
             rpc::spawn(handle.clone());
             mods::refresh_in_background(handle.clone(), cfg.client_mod);
+            community::spawn(handle.clone());
             if cfg.auto_update {
                 update::check_on_startup(handle);
             }

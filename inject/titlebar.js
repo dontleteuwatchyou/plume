@@ -34,6 +34,12 @@
 #plume-update-bubble button { border: 0; border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; color: #fff; background: rgb(255 255 255 / .18); }
 #plume-update-bubble button:hover { background: rgb(255 255 255 / .28); }
 #plume-update-bubble button[data-a="close"] { padding: 6px 9px; background: transparent; }
+/* Bouton Plume dans le panneau du compte, en bas à gauche, juste avant la
+   roue des paramètres de Discord : les réglages au même endroit. */
+#plume-user { position: relative; flex: none; width: 32px; height: 32px; border: 0; padding: 0; border-radius: 8px; cursor: pointer;
+  display: grid; place-items: center; background: transparent; color: #a99cff; }
+#plume-user:hover { background: var(--background-modifier-hover, rgba(255,255,255,.08)); color: #c4baff; }
+#plume-user[data-update]::after { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: #3ba55c; box-shadow: 0 0 0 2px var(--background-base-lowest, #111214); }
 #plume-winbtns button[data-act="settings"][data-update]::after { content: ""; position: absolute; top: 7px; right: 11px; width: 7px; height: 7px; border-radius: 50%; background: #3ba55c; box-shadow: 0 0 0 2px var(--background-base-lowest, #111214); }
 `;
 
@@ -60,6 +66,22 @@
             btns.appendChild(b);
         }
         document.body.appendChild(btns);
+
+        const user = document.createElement("button");
+        user.id = "plume-user";
+        user.title = "Paramètres Plume";
+        user.setAttribute("aria-label", "Paramètres Plume");
+        user.innerHTML = `<svg width="20" height="20" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M742 236c-148 18-286 112-354 260-38 82-54 170-56 256l-60 92 34 22 58-88c84-6 170-30 244-80 140-94 196-272 134-462z" fill="currentColor"/></svg>`;
+        user.addEventListener("click", () => window.__plumeOpenPanel?.());
+        // Discord reconstruit souvent ce panneau : on se replace avant la roue,
+        // qui est le dernier bouton du panneau du compte (tout en bas).
+        const placeUser = () => {
+            const gear = [...document.querySelectorAll('section[class*="panels_"] button')].filter(b => b !== user).pop();
+            if (!gear) return;
+            let slot = gear; // la roue est parfois enveloppée (infobulle)
+            while (slot.parentElement && slot.parentElement.children.length === 1) slot = slot.parentElement;
+            if (slot.previousElementSibling !== user) slot.before(user);
+        };
         // Mise à jour en attente : pastille verte sur le bouton plume, et une
         // bulle en haut au centre (une fois par lancement), loin des
         // notifications de Nightcord en bas à droite.
@@ -68,6 +90,8 @@
             window.__plumeUpdateVersion = version;
             const b = btns.querySelector('[data-act="settings"]');
             b.dataset.update = version;
+            user.dataset.update = version;
+            user.title = `Paramètres Plume — Plume ${version} disponible`;
             b.title = `Paramètres Plume — Plume ${version} disponible`;
             if (bubbleShown) return;
             bubbleShown = true;
@@ -94,6 +118,7 @@
         setInterval(() => {
             if (!document.body.contains(btns)) document.body.appendChild(btns);
             if (!document.body.contains(drag)) document.body.prepend(drag);
+            placeUser();
             if (!bar || !bar.isConnected) {
                 bar = [...document.querySelectorAll('[class^="bar_"], [class*=" bar_"]')].find(el => {
                     const r = el.getBoundingClientRect();

@@ -26,7 +26,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | | Discord web | Plume |
 |---|---|---|
 | Interface officielle, à jour | ✅ | ✅ |
-| **Nightcord** (près de 490 plugins) ou **Equicord**, mis à jour tout seuls | ❌ | ✅ |
+| **Plumecord** (notre mod, basé sur Nightcord : près de 490 plugins, aucun imposé), Nightcord ou Equicord, mis à jour tout seuls | ❌ | ✅ |
 | **Micro en stéréo**, Opus jusqu'à 510 kb/s | ❌ | ✅ |
 | **Paramètres Plume intégrés à Discord** : débit, gain jusqu'à 800 %, limiteur, CBR, FEC, DTX, trame, traitements | ❌ | ✅ |
 | **Visualiseur** : niveaux gauche/droite, spectre, image stéréo, réduction du limiteur | ❌ | ✅ |
@@ -34,7 +34,13 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | **Économie de mémoire** réglable + libération en arrière-plan | ❌ | ✅ |
 | **Push-to-talk global**, qui marche en jeu | ❌ | ✅ |
 | Barre de titre intégrée, logos Plume | ❌ | ✅ |
+| **Bouton Plume à côté de la roue des paramètres**, en bas à gauche | ❌ | ✅ |
+| **Compteur de RAM** dans la barre du haut ou dans un coin, chiffré comme le Gestionnaire des tâches | ❌ | ✅ |
+| **Communauté** : nombre d'utilisateurs de Plume, liste de ceux qui veulent y apparaître, **badge Plume** sur le profil (visible entre utilisateurs de Plume) | ❌ | ✅ |
+| Première installation **sans aucun plugin actif** : tu actives ceux que tu veux | ❌ | ✅ |
 | **Thème Plume** par défaut (nuit violette, accents mauves), désactivable dans Paramètres → Apparence | ❌ | ✅ |
+| **Veille** : Discord déchargé quand Plume ne sert pas (~50-80 Mo), jamais en appel | ❌ | ✅ |
+| **Traqueurs de Discord bloqués** (statistiques d'usage, mesures, rapports d'erreurs), même sans mod | ❌ | ✅ |
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
 | Réduction dans la zone de notification | ❌ | ✅ |
 | Démarrage caché (`--minimized`) | ❌ | ✅ |
@@ -65,6 +71,8 @@ Le gros de la mémoire, c'est Discord lui-même (ses serveurs, membres et messag
 | **Réduite** (défaut) : processus graphique intégré, JavaScript compact | **~570 Mo** caché, ~590 Mo fenêtre ouverte | aucune visible |
 | Maximale : sans accélération graphique | ~560 Mo | vidéos et streams sur le processeur |
 
+**Veille** (activée par défaut, réglable) : après 5 minutes hors du premier plan, ou seulement dans la zone de notification si tu préfères, et s'il n'y a ni appel, ni stream, ni vidéo en cours, Plume décharge complètement Discord. Il reste environ 50 à 80 Mo ; Discord se recharge là où tu l'avais laissé dès que tu reviens. Pas de notifications pendant la veille.
+
 Et quand Plume n'est plus au premier plan depuis 20 secondes (en jeu, par exemple), ou réduit dans la zone de notification, il demande à WebView2 de libérer ce qu'il peut (`MemoryUsageTargetLevel = Low`), sans couper ni le vocal ni les notifications.
 
 ## La stéréo, comment ça marche
@@ -93,7 +101,7 @@ await plumeStereo.status()     // pendant un appel : canaux du micro, ligne Opus
 
 ## Paramètres Plume
 
-Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone de notification → **Paramètres Plume…**. Le panneau s'ouvre **dans Discord**, à son style (Échap pour fermer). Tout est enregistré dès que tu le changes et conservé au redémarrage.
+Bouton **Plume** à côté de la roue des paramètres (en bas à gauche) ou dans la barre du haut, ou clic droit sur l'icône dans la zone de notification → **Paramètres Plume…**. Le panneau s'ouvre **dans Discord**, à son style (Échap pour fermer). Tout est enregistré dès que tu le changes et conservé au redémarrage.
 
 **Audio**
 
@@ -112,6 +120,12 @@ Bouton **plume** dans la barre du haut, ou clic droit sur l'icône dans la zone 
 | Annulation d'écho, suppression de bruit, gain auto | chacun oui / non | en direct |
 
 **Visualiseur** : niveaux crête gauche/droite en dBFS, spectre 20 Hz – 20 kHz par canal, image stéréo (corrélation gauche/droite), réduction appliquée par le limiteur. Il mesure le signal après le gain et le limiteur, c'est-à-dire exactement ce que Discord reçoit. Hors appel, **Tester mon micro** l'alimente sans rien envoyer, avec retour casque en option.
+
+**Performances → Affichage** : un compteur de RAM (tous les processus de Plume, comptés comme la colonne « Mémoire » du Gestionnaire des tâches, mis à jour toutes les 2 s). Il se range dans la barre du haut, en haut ou en bas à droite, et ne bouge plus ; « Déplacer » le rend déplaçable le temps d'un glisser. Mode compact ou détaillé (avec la mémoire privée engagée et le nombre de processus).
+
+**Communauté** : nombre de Plume actifs ces 7 derniers jours et d'installations au total, et la liste des utilisateurs qui ont coché « Apparaître dans la liste ». Sans cette case, Plume n'envoie qu'un identifiant tiré au hasard, rien qui permette de te reconnaître. Le **badge Plume** (activé par défaut, décochable dans la même section) s'affiche sur le profil des utilisateurs de Plume, et seuls les utilisateurs de Plume le voient : pour ça, l'identifiant Discord du compte (rien d'autre) est envoyé au serveur, et effacé si tu décoches. Le serveur est un Cloudflare Worker, voir [`community/`](community/README.md).
+
+**Plumecord** est le mod par défaut ([dépôt](https://github.com/dontleteuwatchyou/plumecord)) : la base de Nightcord (qui réunit déjà Vencord et Equicord), sans aucun plugin imposé ni activé d'office, avec un MP officiel qui annonce les nouvelles versions de Plume et de Plumecord. Ceux qui étaient sur Nightcord y passent automatiquement à la mise à jour ; leurs plugins et réglages sont gardés (ils sont stockés par Discord, pas par le mod).
 
 **Diagnostic** : en appel, ce qui part réellement (canaux, débit réel, ligne Opus négociée) ; et l'auto-test.
 
@@ -225,6 +239,8 @@ src-tauri/src/
   config.rs     config.json
   settings.rs   application des réglages (à chaud, rechargement ou redémarrage)
   update.rs     mise à jour automatique (releases GitHub, paquets signés)
+  ram.rs        mémoire de Plume et de ses processus WebView2 (compteur de RAM)
+  community.rs  compteur d'utilisateurs (Cloudflare Worker, dossier community/)
   wordbomb.rs   frappe dans l'Activity WordBomb via le DevTools Protocol de WebView2
 inject/
   shim.js       notifications Windows natives
@@ -235,6 +251,8 @@ inject/
   theme.js      application du thème + réglage dans Paramètres Discord → Apparence
   brand.js      logo et nom Plume à la place de ceux de Discord
   titlebar.js   boutons de fenêtre intégrés (fenêtre sans cadre Windows)
+  ram.js        compteur de RAM
+  plugins.js    première installation : coupe les plugins activés d'office par le mod
   wordbomb.js   assistant WordBomb / BombParty (le plugin Nightcord n'existe pas en web)
 ```
 

@@ -13,7 +13,7 @@ mod win {
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     use webview2_com::{
         take_pwstr, BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, PermissionRequestedEventHandler,
-        ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
+        ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler, WebResourceRequestedEventHandler,
     };
     use windows::core::{Interface, HSTRING, PWSTR};
 
@@ -45,6 +45,41 @@ mod win {
         let mut token = 0i64;
         unsafe {
             let _ = core.add_PermissionRequested(&handler, &mut token);
+        }
+    }
+
+    /// Télémétrie de Discord, comme Legcord : statistiques d'usage (`science`),
+    /// mesures de performance (`metrics`) et rapports d'erreurs (Sentry).
+    /// Le plugin NoTrack du mod en coupe une partie dans le code ; ici c'est
+    /// le réseau, donc aussi sans mod. Seules ces adresses déclenchent le
+    /// gestionnaire, et la réponse est un 204 vide : Discord croit l'envoi
+    /// réussi et ne réessaie pas.
+    const TRACKERS: [&str; 7] = [
+        "*discord.com/api/v*/science*",
+        "*discord.com/api/science*",
+        "*discord.com/api/v*/metrics*",
+        "*discord.com/error-reporting-proxy/*",
+        "*.sentry.io/*",
+        // Mesures de Cloudflare (RUM) et Google Analytics, comme discord-lite.
+        "*discord.com/cdn-cgi/rum*",
+        "*.google-analytics.com/*",
+    ];
+
+    pub fn block_trackers(core: &ICoreWebView2, env: ICoreWebView2Environment) {
+        let handler = WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            unsafe {
+                let response = env.CreateWebResourceResponse(None, 204, &HSTRING::from("No Content"), &HSTRING::new())?;
+                args.SetResponse(&response)?;
+            }
+            Ok(())
+        }));
+        let mut token = 0i64;
+        unsafe {
+            for uri in TRACKERS {
+                let _ = core.AddWebResourceRequestedFilter(&HSTRING::from(uri), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+            }
+            let _ = core.add_WebResourceRequested(&handler, &mut token);
         }
     }
 
@@ -188,6 +223,7 @@ pub fn setup_webview(w: &WebviewWindow) {
     let _ = w.with_webview(|wv| unsafe {
         if let Ok(core) = wv.controller().CoreWebView2() {
             win::allow_permissions(&core);
+            win::block_trackers(&core, wv.environment());
         }
     });
 }
@@ -210,6 +246,18 @@ pub fn install_extension(w: &WebviewWindow, folder: Option<PathBuf>, then: impl 
         let _ = (w, folder);
         then();
     }
+}
+
+/// Fenêtre cachée dans la zone de notification : plus aucun affichage à
+/// calculer (animations, GIF, vidéos), et les minuteries de la page ralentissent
+/// comme dans un onglet en arrière-plan. Le son et le vocal continuent.
+pub fn set_rendering(w: &WebviewWindow, visible: bool) {
+    #[cfg(windows)]
+    let _ = w.with_webview(move |wv| unsafe {
+        let _ = wv.controller().SetIsVisible(visible);
+    });
+    #[cfg(not(windows))]
+    let _ = (w, visible);
 }
 
 /// Fenêtre cachée dans la zone de notification : WebView2 libère ce qu'il peut.

@@ -65,8 +65,37 @@ pub fn get_config(app: AppHandle) -> Config {
 }
 
 #[tauri::command]
-pub fn set_config(app: AppHandle, config: Config) {
+pub fn set_config(app: AppHandle, mut config: Config) {
+    // Ce que la page ne gère pas depuis le panneau : la position du compteur
+    // (déplacé pendant que le panneau avait une copie plus ancienne),
+    // l'identifiant Communauté et le nettoyage des plugins déjà fait.
+    let cur = current(&app);
+    config.ram_widget.x = cur.ram_widget.x;
+    config.ram_widget.y = cur.ram_widget.y;
+    config.community.id = cur.community.id;
+    config.plugins_cleared |= cur.plugins_cleared;
     apply(&app, config);
+}
+
+/// Nouvelle position du compteur de RAM, après un glisser.
+#[tauri::command]
+pub fn set_ram_position(app: AppHandle, x: f64, y: f64) {
+    // Rien à appliquer : on garde et on enregistre, sans repasser l'audio.
+    let state = app.state::<Mutex<Config>>();
+    let mut cfg = state.lock().unwrap();
+    cfg.ram_widget.spot = crate::config::RamSpot::Custom;
+    cfg.ram_widget.x = x;
+    cfg.ram_widget.y = y;
+    cfg.sanitize();
+    cfg.save(&app);
+}
+
+/// Les plugins activés d'office ont été coupés (première installation).
+#[tauri::command]
+pub fn plugins_cleared(app: AppHandle) {
+    let mut cfg = current(&app);
+    cfg.plugins_cleared = true;
+    apply(&app, cfg);
 }
 
 /// Réglages audio à jour, relus par la page à chaque chargement (les scripts

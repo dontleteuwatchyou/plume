@@ -16,6 +16,9 @@ use tauri::{AppHandle, Manager};
 /// web recompilée chaque jour avec les plugins que l'officielle retire et les
 /// réglages des plugins qui ne sautent plus.
 const PLUME_NIGHTCORD: &str = "https://github.com/dontleteuwatchyou/nightcord-web-plus/releases/latest/download/nightcord-web-plus.zip";
+/// Plumecord (github.com/dontleteuwatchyou/plumecord) : notre fork de
+/// Nightcord, léger, sans aucun plugin imposé.
+const PLUMECORD: &str = "https://github.com/dontleteuwatchyou/plumecord/releases/latest/download/plumecord.zip";
 const NIGHTCORD_RELEASE: &str = "https://source.nightcord.st/api/v1/repos/nightcord/nightcord/releases/latest";
 const EQUICORD_EXTENSION: &str = "https://github.com/Equicord/Equicord/releases/download/latest/extension-chrome.zip";
 const MAX_AGE: Duration = Duration::from_secs(6 * 3600);
@@ -23,16 +26,18 @@ const MAX_AGE: Duration = Duration::from_secs(6 * 3600);
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ClientMod {
+    Plumecord,
     Nightcord,
     Equicord,
     None,
 }
 
 impl ClientMod {
-    pub const ALL: [ClientMod; 3] = [ClientMod::Nightcord, ClientMod::Equicord, ClientMod::None];
+    pub const ALL: [ClientMod; 4] = [ClientMod::Plumecord, ClientMod::Nightcord, ClientMod::Equicord, ClientMod::None];
 
     pub fn id(self) -> &'static str {
         match self {
+            ClientMod::Plumecord => "plumecord",
             ClientMod::Nightcord => "nightcord",
             ClientMod::Equicord => "equicord",
             ClientMod::None => "none",
@@ -41,6 +46,7 @@ impl ClientMod {
 
     pub fn label(self) -> &'static str {
         match self {
+            ClientMod::Plumecord => "Plumecord",
             ClientMod::Nightcord => "Nightcord",
             ClientMod::Equicord => "Equicord",
             ClientMod::None => "Aucun",
@@ -70,6 +76,7 @@ fn get_bytes(url: &str) -> Result<Vec<u8>, String> {
 
 fn extension_url(m: ClientMod) -> Result<String, String> {
     match m {
+        ClientMod::Plumecord => Ok(PLUMECORD.into()),
         ClientMod::Equicord => Ok(EQUICORD_EXTENSION.into()),
         ClientMod::Nightcord => {
             #[derive(Deserialize)]
@@ -98,12 +105,25 @@ fn extension_url(m: ClientMod) -> Result<String, String> {
 /// version a son propre dossier : on ne remplace jamais sur place un dossier
 /// que WebView2 a enregistré (il le marque alors cassé et refuse de le
 /// réinstaller).
-fn download(m: ClientMod, root: &Path) -> Result<PathBuf, String> {
+///
+/// `fallback` : sans version locale, Plumecord pas encore publié se rabat sur
+/// Nightcord Web+. Jamais pour une mise à jour en fond, qui remplacerait sinon
+/// un Plumecord déjà installé par Nightcord.
+fn download(m: ClientMod, root: &Path, fallback: bool) -> Result<PathBuf, String> {
     let zip = match m {
         // Repli sur l'extension officielle si la nôtre n'est pas publiée.
         ClientMod::Nightcord => get_bytes(PLUME_NIGHTCORD).or_else(|e| {
             eprintln!("[plume] nightcord-web-plus : {e}, repli sur l'officielle");
             get_bytes(&extension_url(m)?)
+        })?,
+        // Plumecord pas encore publié (ou GitHub injoignable) : Nightcord Web+,
+        // dont il dérive. Mêmes réglages (stockés par Discord), rien de perdu.
+        ClientMod::Plumecord => get_bytes(PLUMECORD).or_else(|e| {
+            if !fallback {
+                return Err(e);
+            }
+            eprintln!("[plume] plumecord : {e}, repli sur Nightcord Web+");
+            get_bytes(PLUME_NIGHTCORD)
         })?,
         _ => get_bytes(&extension_url(m)?)?,
     };
@@ -149,7 +169,7 @@ pub fn prepare(app: &AppHandle, m: ClientMod) -> Option<PathBuf> {
     let _ = std::fs::create_dir_all(&root);
     let current = match versions(&root).into_iter().next() {
         Some((_, path)) => path,
-        None => match download(m, &root) {
+        None => match download(m, &root, true) {
             Ok(path) => path,
             Err(e) => {
                 eprintln!("[plume] {} : {e}", m.id());
@@ -191,7 +211,7 @@ pub fn refresh_in_background(app: AppHandle, m: ClientMod) {
         let Some((stamp, _)) = versions(&root).into_iter().next() else { return };
         let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
         if now.saturating_sub(stamp) >= MAX_AGE.as_secs() {
-            if let Err(e) = download(m, &root) {
+            if let Err(e) = download(m, &root, false) {
                 eprintln!("[plume] mise à jour de {} : {e}", m.id());
             }
         }

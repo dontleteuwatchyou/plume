@@ -1,6 +1,6 @@
 // Paramètres Plume, intégrés à la fenêtre Discord : un calque au style de
-// Discord (ses variables de thème), ouvert par le bouton plume de la barre
-// du haut ou depuis la zone de notification. Échap ou ✕ pour fermer.
+// Discord (ses variables de thème), ouvert par le bouton Plume de la colonne
+// des serveurs, celui de la barre du haut, ou depuis la zone de notification. Échap ou ✕ pour fermer.
 // Le contenu vit dans un shadow DOM : ni Discord ni les mods n'y touchent.
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
@@ -24,7 +24,7 @@
         ["reduced", "Réduite", "Environ 120 Mo de moins. Aucune contrepartie visible."],
         ["max", "Maximale", "Environ 140 Mo de moins. Vidéos et streams sollicitent davantage le processeur."],
     ];
-    const SECTIONS = [["audio", "Audio"], ["visu", "Visualiseur"], ["diag", "Diagnostic"], ["mod", "Mod client"], ["perf", "Performances"], ["update", "Mises à jour"]];
+    const SECTIONS = [["audio", "Audio"], ["visu", "Visualiseur"], ["diag", "Diagnostic"], ["mod", "Mod client"], ["perf", "Performances"], ["community", "Communauté"], ["update", "Mises à jour"]];
 
     const css = `
 :host { all: initial; }
@@ -100,6 +100,14 @@ canvas { width: 100%; display: block; border-radius: 8px; background: var(--back
 .legend { display: flex; gap: 14px; font-size: 13px; color: var(--text-muted, #949ba4); margin-left: auto; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .muted { color: var(--text-muted, #949ba4); font-size: 13.5px; }
+.users { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--background-base-lower, #1a1b1e); border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.user:hover { background: var(--background-modifier-hover, #ffffff14); }
+.user img { width: 36px; height: 36px; border-radius: 50%; flex: none; background: #8b7cf633; }
+.user .n { font-weight: 600; color: var(--header-primary, #f2f3f5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user .u { font-size: 12.5px; color: var(--text-muted, #949ba4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user > div { min-width: 0; }
+.big { font-size: 28px !important; }
 #toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 16px); background: var(--background-base-lowest, #111214); padding: 8px 16px; border-radius: 8px; font-size: 13.5px; opacity: 0; transition: .2s; pointer-events: none; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 `;
@@ -178,7 +186,7 @@ ${toggle("autoGainControl", "Gain automatique", "Égalise le volume. Écrase la 
         mod: () => `
 <h2>Mod client</h2>
 <p class="muted">Chargé comme une extension, exactement comme dans Chrome. Discord se recharge quand tu en changes.</p>
-${[["nightcord", "Nightcord", "Fork d'Equicord, près de 490 plugins."], ["equicord", "Equicord", "Fork de Vencord, environ 370 plugins."], ["none", "Aucun", "Discord sans modification. Le push-to-talk global a besoin d'un mod."]]
+${[["plumecord", "Plumecord", "Notre mod : la base de Nightcord, plus léger, aucun plugin imposé. Tu actives ceux que tu veux."], ["nightcord", "Nightcord", "Fork d'Equicord, près de 490 plugins."], ["equicord", "Equicord", "Fork de Vencord, environ 370 plugins."], ["none", "Aucun", "Discord sans modification. Le push-to-talk global a besoin d'un mod."]]
     .map(([v, t, d]) => `<label class="radio" data-mod="${v}"><input type="radio" name="mod" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}`,
 
         update: () => `
@@ -199,7 +207,31 @@ ${toggle("autoUpdate", "Vérifier au démarrage", "Plume cherche une nouvelle ve
 <p class="muted">Plume redémarre pour appliquer le changement.</p>
 ${MEMORY.map(([v, t, d]) => `<label class="radio" data-mem="${v}"><input type="radio" name="mem" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}
 <h4>Arrière-plan</h4>
-${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}`,
+${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}
+<h4>Veille</h4>
+<div class="row"><div><div class="t">Mettre Discord en veille</div><div class="d">Quand Plume ne sert pas, Discord est déchargé : environ 50 à 80 Mo au lieu de 500. Jamais pendant un appel, un stream ou une vidéo. Il se recharge en quelques secondes quand tu reviens. <b>Pas de notifications pendant la veille.</b></div></div><label class="sw"><input type="checkbox" id="sleepOn"><span></span></label></div>
+<div class="row"><div><div class="t">Délai</div><div class="d">Temps hors du premier plan avant la veille.</div></div>
+<div class="seg" id="sleepMin">${[2, 5, 10, 30].map(v => `<button data-v="${v}">${v} min</button>`).join("")}</div></div>
+<div class="row"><div><div class="t">Seulement dans la zone de notification</div><div class="d">Discord reste chargé quand Plume est juste derrière un jeu ; il ne se met en veille qu'une fois fermé dans la zone de notification.</div></div><label class="sw"><input type="checkbox" id="sleepTray"><span></span></label></div>
+<h4>Affichage</h4>
+<div class="row"><div><div class="t">Compteur de RAM à l'écran</div><div class="d">La mémoire utilisée par Plume, tous ses processus compris, comptée comme dans le Gestionnaire des tâches.</div></div><label class="sw"><input type="checkbox" id="ramOn"><span></span></label></div>
+<div class="row"><div><div class="t">Contenu du compteur</div><div class="d">Détaillé : mémoire privée, mémoire physique et nombre de processus.</div></div>
+<div class="seg" id="ramMode"><button data-v="0">Compact</button><button data-v="1">Détaillé</button></div></div>
+<div class="row"><div><div class="t">Emplacement</div><div class="d">Le compteur reste à sa place. « Déplacer » le rend déplaçable le temps d'un glisser (Échap pour annuler).</div></div>
+<div class="seg" id="ramSpot"><button data-v="bar">Barre du haut</button><button data-v="topright">Haut droite</button><button data-v="bottomright">Bas droite</button><button data-v="custom" id="ramMove">Déplacer</button></div></div>`,
+
+        community: () => `
+<h2>Communauté</h2>
+<div class="stats" style="grid-template-columns:repeat(2,1fr)">
+  <div class="stat"><div class="k">Utilisateurs actifs (7 derniers jours)</div><div class="v big" id="comActive">—</div></div>
+  <div class="stat"><div class="k">Installations au total</div><div class="v big" id="comTotal">—</div></div>
+</div>
+<h4>Visibilité</h4>
+<div class="row"><div><div class="t">Apparaître dans la liste des utilisateurs</div><div class="d">Ton pseudo et ton avatar Discord deviennent visibles pour les autres utilisateurs de Plume. Décoché, tu es seulement compté, avec un identifiant au hasard qui ne dit rien de toi. Tu peux décocher à tout moment : ton profil est alors retiré du serveur.</div></div><label class="sw"><input type="checkbox" id="comListed"><span></span></label></div>
+<div class="row"><div><div class="t">Badge Plume sur ton profil</div><div class="d">Un petit badge Plume sur ton profil, que seuls les utilisateurs de Plume voient (et toi le leur). Pour ça, ton identifiant Discord (rien d'autre) est envoyé au serveur Communauté. Décoché, il en est effacé.</div></div><label class="sw"><input type="checkbox" id="comBadge"><span></span></label></div>
+<h4 id="comListTitle">Utilisateurs de Plume</h4>
+<div class="users" id="comUsers"></div>
+<p class="muted" id="comNote" style="margin-top:12px">Chargement…</p>`,
     };
 
     function render() {
@@ -219,6 +251,15 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         root.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", Object.entries(PRESETS[b.dataset.preset].v).every(([k, v]) => a[k] === v)));
         root.querySelectorAll("[data-mod]").forEach(l => { const on = l.dataset.mod === cfg.mod; l.classList.toggle("sel", on); l.querySelector("input").checked = on; });
         root.querySelectorAll("[data-mem]").forEach(l => { const on = l.dataset.mem === cfg.memory; l.classList.toggle("sel", on); l.querySelector("input").checked = on; });
+        const sl = cfg.sleep || {};
+        if ($("#sleepOn")) { $("#sleepOn").checked = !!sl.enabled; $("#sleepTray").checked = !!sl.trayOnly; $("#sleepTray").disabled = !sl.enabled; }
+        root.querySelectorAll("#sleepMin button").forEach(b => { b.setAttribute("aria-pressed", +b.dataset.v === sl.minutes); b.disabled = !sl.enabled; });
+        const rw = cfg.ramWidget || {};
+        if ($("#ramOn")) $("#ramOn").checked = !!rw.enabled;
+        root.querySelectorAll("#ramMode button").forEach(b => { b.setAttribute("aria-pressed", +b.dataset.v === +!!rw.detailed); b.disabled = !rw.enabled; });
+        root.querySelectorAll("#ramSpot button").forEach(b => { b.setAttribute("aria-pressed", b.dataset.v === (rw.spot || "bar")); b.disabled = !rw.enabled; });
+        if ($("#comListed")) $("#comListed").checked = !!cfg.community?.listed;
+        if ($("#comBadge")) $("#comBadge").checked = cfg.community?.badge !== false;
         $("#monoWarn")?.classList.toggle("on", a.stereo && (a.echoCancellation || a.noiseSuppression || a.autoGainControl));
     }
 
@@ -253,6 +294,11 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
                 else render();
             }
             if (e.target.id === "eqOn") { cfg.audio.eq.enabled = e.target.checked; save(); }
+            if (e.target.id === "sleepOn") { cfg.sleep.enabled = e.target.checked; save(0); }
+            if (e.target.id === "sleepTray") { cfg.sleep.trayOnly = e.target.checked; save(0); }
+            if (e.target.id === "ramOn") { cfg.ramWidget.enabled = e.target.checked; save(0); window.__plumeRam?.(cfg.ramWidget); }
+            if (e.target.id === "comBadge") { cfg.community.badge = e.target.checked; clearTimeout(saveTimer); render(); invoke("set_config", { config: cfg }).then(loadCommunity); }
+            if (e.target.id === "comListed") { cfg.community.listed = e.target.checked; clearTimeout(saveTimer); render(); invoke("set_config", { config: cfg }).then(loadCommunity); }
             if (e.target.id === "monitor") { const c = plumeStereo.activeChain(); if (c) plumeStereo.setMonitor(c, e.target.checked); }
         });
         page.addEventListener("click", e => {
@@ -261,6 +307,11 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
             if (b.dataset.preset) { Object.assign(cfg.audio, PRESETS[b.dataset.preset].v, { echoCancellation: false, noiseSuppression: false, autoGainControl: false }); save(0); }
             if (b.parentElement?.id === "frame") { cfg.audio.frameMs = +b.dataset.v; save(); }
             if (b.parentElement?.id === "hp") { cfg.audio.eq.highpass = +b.dataset.v; save(); }
+            if (b.parentElement?.id === "ramMode") { cfg.ramWidget.detailed = b.dataset.v === "1"; save(0); window.__plumeRam?.(cfg.ramWidget); }
+            if (b.parentElement?.id === "sleepMin") { cfg.sleep.minutes = +b.dataset.v; save(0); }
+            if (b.id === "ramMove") { close(); window.__plumeRam?.edit(); }
+            else if (b.parentElement?.id === "ramSpot") { cfg.ramWidget.spot = b.dataset.v; save(0); window.__plumeRam?.(cfg.ramWidget); }
+            if (b.dataset.user) { const open = window.Vencord?.Util?.openUserProfile; if (open) { close(); open(b.dataset.user); } }
             if (b.dataset.eqp) { const p = EQ_PRESETS[b.dataset.eqp]; Object.assign(cfg.audio.eq, { enabled: true, highpass: p.highpass, bands: [...p.bands] }); save(0); }
             if (b.id === "micTest") toggleMicTest();
             if (b.id === "selfTest") runSelfTest(b);
@@ -278,6 +329,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         if (section === "visu") startVisu();
         if (section === "diag") { refreshLive(); poll = setInterval(refreshLive, 1000); }
         if (section === "update") checkUpdate();
+        if (section === "community") loadCommunity();
         $(".main").scrollTop = 0;
     }
 
@@ -417,6 +469,53 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
             stat("Paquets / s", s.paquetsParSeconde) +
             stat("Traitements", [s.echoCancellation && "écho", s.noiseSuppression && "bruit", s.autoGainControl && "gain"].filter(Boolean).join(", ") || "aucun") +
             `<div class="stat wide"><div class="k">Ligne Opus négociée</div><div class="v mono">${esc(s.fmtp)}</div></div>`;
+    }
+
+    // ---- Communauté ----------------------------------------------------------
+    // Compte Discord connecté, pour la liste (envoyé seulement si coché).
+    function findStore(name) {
+        try { const s = window.Vencord?.Webpack?.findStore?.(name); if (s) return s; } catch {}
+        const chunks = window.webpackChunkdiscord_app;
+        if (!chunks) return;
+        let req;
+        chunks.push([[Symbol("plume")], {}, r => (req = r)]);
+        for (const mod of Object.values(req?.c || {})) {
+            const ex = mod?.exports;
+            if (!ex || typeof ex !== "object") continue;
+            for (const v of [ex, ...Object.values(ex)]) {
+                try { if (v?.getName?.() === name) return v; } catch {}
+            }
+        }
+    }
+    function myProfile() {
+        try {
+            const u = findStore("UserStore")?.getCurrentUser?.();
+            if (u?.id) return { id: u.id, username: u.username, global_name: u.globalName || null, avatar: u.avatar || null };
+        } catch {}
+        return null;
+    }
+    function avatarUrl(u) {
+        if (/^(a_)?[0-9a-f]{32}$/.test(u.avatar || "")) return `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.webp?size=64`;
+        let i = 0;
+        try { i = Number((BigInt(u.id) >> 22n) % 6n); } catch {}
+        return `https://cdn.discordapp.com/embed/avatars/${i}.png`;
+    }
+    async function loadCommunity() {
+        if (!$("#comNote")) return;
+        $("#comNote").textContent = "Chargement…";
+        try {
+            const s = await invoke("community_sync", { profile: cfg.community?.listed ? myProfile() : null, discord: myProfile()?.id ?? null });
+            window.__plumeBadges?.(s.badges);
+            if (!$("#comNote")) return;
+            const n = x => Number(x).toLocaleString("fr-FR");
+            $("#comActive").textContent = n(s.active);
+            $("#comTotal").textContent = n(s.total);
+            $("#comListTitle").textContent = `Utilisateurs de Plume · ${n(s.users.length)} visibles`;
+            $("#comUsers").innerHTML = s.users.map(u => `<button class="user" data-user="${esc(u.id)}" title="${esc(u.username)}"><img src="${esc(avatarUrl(u))}" alt="" loading="lazy"><div><div class="n">${esc(u.global_name || u.username)}</div><div class="u">${esc(u.username)}</div></div></button>`).join("");
+            $("#comNote").textContent = s.users.length ? "Seuls ceux qui ont choisi d'apparaître sont listés." : "Personne n'a encore choisi d'apparaître dans la liste.";
+        } catch (e) {
+            if ($("#comNote")) $("#comNote").textContent = String(e);
+        }
     }
 
     // ---- Mises à jour -------------------------------------------------------

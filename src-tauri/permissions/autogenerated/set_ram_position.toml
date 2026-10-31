@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-ram-position"
+description = "Enables the set_ram_position command without any pre-configured scope."
+commands.allow = ["set_ram_position"]
+
+[[permission]]
+identifier = "deny-set-ram-position"
+description = "Denies the set_ram_position command without any pre-configured scope."
+commands.deny = ["set_ram_position"]

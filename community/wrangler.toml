@@ -1,0 +1,9 @@
+name = "plume-community"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "plume-community"
+# Remplacé par l'identifiant affiché par « npx wrangler d1 create plume-community ».
+database_id = "A-REMPLACER"
