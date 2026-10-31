@@ -44,6 +44,7 @@
 .side button:hover { background: var(--background-modifier-hover, #ffffff0f); color: var(--interactive-hover, #dbdee1); }
 .side button[data-update]::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #3ba55c; vertical-align: 1px; }
 .side button[aria-current="true"] { background: var(--background-modifier-selected, #ffffff1f); color: var(--interactive-active, #fff); }
+.side .kofi { margin-top: 14px; border-top: 1px solid var(--background-modifier-accent, #ffffff14); border-radius: 0 0 4px 4px; padding-top: 10px; color: #ff8a80; }
 .main { flex: 1 1 800px; display: flex; overflow: auto; padding: 60px 40px 80px; }
 .content { width: 100%; max-width: 740px; }
 .close { position: sticky; top: 0; align-self: flex-start; margin-left: 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--interactive-normal, #b5bac1); font-size: 13px; font-weight: 600; }
@@ -208,6 +209,8 @@ ${toggle("autoUpdate", "Vérifier au démarrage", "Plume cherche une nouvelle ve
 ${MEMORY.map(([v, t, d]) => `<label class="radio" data-mem="${v}"><input type="radio" name="mem" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}
 <h4>Arrière-plan</h4>
 ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}
+<h4>Démarrage</h4>
+${toggle("autostart", "Lancer Plume au démarrage de Windows", "Plume s'ouvre tout seul quand tu allumes ton PC, caché dans la zone de notification.", "")}
 <h4>Veille</h4>
 <div class="row"><div><div class="t">Mettre Discord en veille</div><div class="d">Quand Plume ne sert pas, Discord est déchargé : environ 50 à 80 Mo au lieu de 500. Jamais pendant un appel, un stream ou une vidéo. Il se recharge en quelques secondes quand tu reviens. <b>Pas de notifications pendant la veille.</b></div></div><label class="sw"><input type="checkbox" id="sleepOn"><span></span></label></div>
 <div class="row"><div><div class="t">Délai</div><div class="d">Temps hors du premier plan avant la veille.</div></div>
@@ -238,7 +241,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         const a = cfg.audio;
         root.querySelectorAll(".side button").forEach(b => b.setAttribute("aria-current", b.dataset.s === current));
         root.querySelector('.side button[data-s="update"]')?.toggleAttribute("data-update", !!window.__plumeUpdateVersion);
-        root.querySelectorAll("[data-k]").forEach(i => (i.checked = ["trimInBackground", "autoUpdate"].includes(i.dataset.k) ? !!cfg[i.dataset.k] : !!a[i.dataset.k]));
+        root.querySelectorAll("[data-k]").forEach(i => (i.checked = ["trimInBackground", "autoUpdate", "autostart"].includes(i.dataset.k) ? !!cfg[i.dataset.k] : !!a[i.dataset.k]));
         if ($("#gain")) { $("#gain").value = Math.round(a.gain * 100); const db = a.gain > 0 ? 20 * Math.log10(a.gain) : -Infinity; $("#gainVal").textContent = `${Math.round(a.gain * 100)} % (${db === -Infinity ? "muet" : `${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`})`; }
         if ($("#bitrate")) { $("#bitrate").value = a.bitrate / 1000; $("#bitrateVal").textContent = kbps(a.bitrate); }
         root.querySelectorAll("#frame button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === a.frameMs));
@@ -286,7 +289,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         });
         page.addEventListener("change", e => {
             const k = e.target.dataset?.k;
-            if (k === "trimInBackground" || k === "autoUpdate") { cfg[k] = e.target.checked; save(); }
+            if (k === "trimInBackground" || k === "autoUpdate" || k === "autostart") { cfg[k] = e.target.checked; save(); }
             else if (k) { cfg.audio[k] = e.target.checked; save(); }
             if (e.target.name === "mod" && e.target.value !== cfg.mod) { cfg.mod = e.target.value; save(0); }
             if (e.target.name === "mem" && e.target.value !== cfg.memory) {
@@ -505,7 +508,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
         $("#comNote").textContent = "Chargement…";
         try {
             const s = await invoke("community_sync", { profile: cfg.community?.listed ? myProfile() : null, discord: myProfile()?.id ?? null });
-            window.__plumeBadges?.(s.badges);
+            window.__plumeBadges?.(s.badges, s.active);
             if (!$("#comNote")) return;
             const n = x => Number(x).toLocaleString("fr-FR");
             $("#comActive").textContent = n(s.active);
@@ -570,6 +573,7 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
   <div class="side"><nav>
     <h3><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b7cf6" stroke-width="2"><path d="M4 21c4-4 6-8 7-14 4 1 8 0 9-4-1 8-6 13-13 14"/><path d="M4 21 15 9"/></svg>Paramètres Plume</h3>
     ${SECTIONS.map(([id, t]) => `<button data-s="${id}">${t}</button>`).join("")}
+    <button class="kofi" title="ko-fi.com/forsakengh">☕ Soutenir Plume</button>
   </nav></div>
   <div class="main"><div class="content"></div>
     <div class="close"><button aria-label="Fermer"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>ÉCHAP</div>
@@ -577,7 +581,8 @@ ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plu
 </div>
 <div id="toast"></div>`;
         document.body.appendChild(host);
-        root.querySelectorAll(".side button").forEach(b => b.addEventListener("click", () => show(b.dataset.s)));
+        root.querySelectorAll(".side button[data-s]").forEach(b => b.addEventListener("click", () => show(b.dataset.s)));
+        root.querySelector(".side .kofi").addEventListener("click", () => invoke("open_url", { url: "https://ko-fi.com/forsakengh" }));
         $(".close button").addEventListener("click", close);
         bind();
         show(current);

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod activity;
+mod autostart;
 mod badge;
 mod capture;
 mod community;
@@ -431,6 +432,7 @@ fn main() {
             ptt::spawn(handle.clone());
             activity::spawn(handle.clone());
             protocol::register();
+            autostart::apply(cfg.autostart);
             rpc::spawn(handle.clone());
             mods::refresh_in_background(handle.clone(), cfg.client_mod);
             community::spawn(handle.clone());

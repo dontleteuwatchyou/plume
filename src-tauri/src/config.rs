@@ -22,6 +22,8 @@ pub struct Config {
     /// Cherche une nouvelle version de Plume au démarrage.
     #[serde(rename = "autoUpdate")]
     pub auto_update: bool,
+    /// Lancer Plume (caché) à l'ouverture de la session Windows (autostart.rs).
+    pub autostart: bool,
     /// Combinaison PTT forcée, en codes VK (ex. [5] = bouton souris 4).
     /// Vide : on reprend la touche réglée dans Discord.
     #[serde(rename = "pttKeys")]
@@ -212,6 +214,7 @@ impl Default for Config {
             memory: MemoryMode::Reduced,
             trim_in_background: true,
             auto_update: true,
+            autostart: false,
             ptt_keys: Vec::new(),
             ram_widget: RamWidget::default(),
             plugins_cleared: true,

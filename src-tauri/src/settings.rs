@@ -36,6 +36,9 @@ pub fn apply(app: &AppHandle, mut next: Config) {
             let _ = item.set_checked(next.client_mod == *m);
         }
     }
+    if next.autostart != previous.autostart {
+        crate::autostart::apply(next.autostart);
+    }
     if next.memory != previous.memory {
         app.restart();
     }

@@ -1,6 +1,6 @@
 [package]
 name = "plume"
-version = "0.3.14"
+version = "0.3.15"
 description = "Discord, en léger : discord.com/app dans Tauri, avec Nightcord et la stéréo micro"
 edition = "2021"
 license = "GPL-3.0-or-later"
