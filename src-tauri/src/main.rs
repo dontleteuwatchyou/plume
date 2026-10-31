@@ -10,6 +10,7 @@ mod loopback;
 mod config;
 mod mods;
 mod native;
+mod plugins_backup;
 mod protocol;
 mod ptt;
 mod recorder;
@@ -134,6 +135,8 @@ pub(crate) fn show_main(app: &AppHandle) {
 fn init_scripts(cfg: &Config) -> Vec<String> {
     vec![
         format!("window.__PLUME__ = {};", serde_json::to_string(cfg).unwrap()),
+        // En premier : lit les réglages du mod avant que Discord ne retire localStorage.
+        include_str!("../../inject/backup.js").to_string(),
         include_str!("../../inject/shim.js").to_string(),
         include_str!("../../inject/screenshare.js").to_string(),
         include_str!("../../inject/stereo.js").to_string(),
@@ -389,6 +392,8 @@ fn main() {
             win_close,
             settings::get_config,
             sleep::sleep_busy,
+            plugins_backup::plugins_backup_save,
+            plugins_backup::plugins_backup_restore,
             settings::set_config,
             settings::set_ram_position,
             settings::plugins_cleared,

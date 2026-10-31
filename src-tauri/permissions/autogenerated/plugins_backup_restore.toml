@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plugins-backup-restore"
+description = "Enables the plugins_backup_restore command without any pre-configured scope."
+commands.allow = ["plugins_backup_restore"]
+
+[[permission]]
+identifier = "deny-plugins-backup-restore"
+description = "Denies the plugins_backup_restore command without any pre-configured scope."
+commands.deny = ["plugins_backup_restore"]
