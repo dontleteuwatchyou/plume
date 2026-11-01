@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-win-start-drag"
+description = "Enables the win_start_drag command without any pre-configured scope."
+commands.allow = ["win_start_drag"]
+
+[[permission]]
+identifier = "deny-win-start-drag"
+description = "Denies the win_start_drag command without any pre-configured scope."
+commands.deny = ["win_start_drag"]

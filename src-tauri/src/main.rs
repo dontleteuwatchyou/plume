@@ -91,6 +91,13 @@ fn win_minimize(window: WebviewWindow) {
     let _ = window.minimize();
 }
 
+/// Déplacement de la fenêtre par le gestionnaire de fenêtres, pour la barre de
+/// titre intégrée sous Linux (inject/titlebar.js).
+#[tauri::command]
+fn win_start_drag(window: WebviewWindow) {
+    let _ = window.start_dragging();
+}
+
 #[tauri::command]
 fn win_toggle_maximize(window: WebviewWindow) {
     if window.is_maximized().unwrap_or(false) {
@@ -433,6 +440,7 @@ fn main() {
             ptt_keys,
             win_minimize,
             win_toggle_maximize,
+            win_start_drag,
             win_close,
             settings::get_config,
             sleep::sleep_busy,

@@ -61,6 +61,20 @@
         drag.id = "plume-drag";
         document.body.prepend(drag);
 
+        // Linux : WebKitGTK ignore `app-region`. Un appui dans la barre du haut,
+        // ailleurs que sur un bouton, demande le déplacement au gestionnaire de
+        // fenêtres (X11 comme Wayland) ; un double appui agrandit. La bande
+        // laisse alors passer les clics vers les boutons de Discord dessous.
+        if (!window.chrome?.webview) {
+            drag.style.pointerEvents = "none";
+            const interactive = 'button, a, input, textarea, select, [role="button"], [role="tab"], [role="link"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+            addEventListener("mousedown", e => {
+                const bar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--plume-bar-h")) || 32;
+                if (e.button !== 0 || e.clientY > bar || e.target.closest?.(interactive)) return;
+                invoke(e.detail === 2 ? "win_toggle_maximize" : "win_start_drag");
+            }, true);
+        }
+
         const btns = document.createElement("div");
         btns.id = "plume-winbtns";
         for (const [act, cmd] of [["settings", null], ["min", "win_minimize"], ["max", "win_toggle_maximize"], ["close", "win_close"]]) {
