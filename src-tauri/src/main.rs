@@ -45,8 +45,15 @@ pub const MAIN: &str = "main";
 pub const SECOND: &str = "second";
 
 /// Hôtes que la fenêtre a le droit d'afficher. Tout le reste part dans le navigateur.
-/// Pages de Plume lui-même (l'écran de démarrage `splash.html`).
+/// Pages de Plume lui-même (l'écran de démarrage `splash.html`). Le moteur ne
+/// les sert pas à la même adresse partout : Tauri passe par `tauri://localhost`,
+/// sauf sous Windows où wry doit se rabattre sur `http://tauri.localhost`. Une
+/// seule des deux adresses existe à la fois, et viser la mauvaise envoyait la
+/// veille sur une page introuvable.
+#[cfg(windows)]
 pub(crate) const SPLASH_URL: &str = "http://tauri.localhost/splash.html";
+#[cfg(not(windows))]
+pub(crate) const SPLASH_URL: &str = "tauri://localhost/splash.html";
 
 fn is_local(url: &Url) -> bool {
     url.host_str() == Some("tauri.localhost") || url.scheme() == "tauri"
