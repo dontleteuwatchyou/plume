@@ -382,7 +382,23 @@ pub fn close_window_on_page_close(w: &WebviewWindow) {
         });
     }
     #[cfg(not(windows))]
-    let _ = w;
+    {
+        use webkit2gtk::WebViewExt;
+        let target = w.clone();
+        let _ = w.with_webview(move |wv| {
+            wv.inner().connect_close(move |_| {
+                // Même raison que sous Windows : on ne ferme pas depuis le
+                // signal lui-même, on repasse par la boucle d'événements.
+                let w = target.clone();
+                std::thread::spawn(move || {
+                    let app = w.app_handle().clone();
+                    let _ = app.run_on_main_thread(move || {
+                        let _ = w.close();
+                    });
+                });
+            });
+        });
+    }
 }
 
 /// Fenêtre cachée dans la zone de notification : WebView2 libère ce qu'il peut.

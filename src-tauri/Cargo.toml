@@ -25,6 +25,9 @@ tauri-plugin-updater = "2"
 [target.'cfg(not(windows))'.dependencies]
 # Le mod est posé à la main sur WebKitGTK, qui ne charge pas d'extension (native.rs).
 webkit2gtk = { version = "2.0", features = ["v2_38"] }
+# Disposition du clavier pour le push-to-talk (ptt.rs), mêmes versions que Tauri.
+gtk = "0.18"
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"

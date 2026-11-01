@@ -2718,6 +2718,8 @@ dependencies = [
 name = "plume"
 version = "0.3.16"
 dependencies = [
+ "gtk",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

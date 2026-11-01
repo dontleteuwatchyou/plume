@@ -1,6 +1,7 @@
 //! Liens discord:// (boutons « Ouvrir dans l'appli », invitations…) ouverts
 //! dans Plume, comme le fait l'appli Discord. Plume s'enregistre pour ce
-//! protocole dans le registre de l'utilisateur (HKCU), sans droits admin.
+//! protocole sans droits admin : dans le registre de l'utilisateur (HKCU) sous
+//! Windows, comme gestionnaire `x-scheme-handler/discord` ailleurs.
 
 use tauri::{AppHandle, Manager};
 
@@ -65,8 +66,18 @@ pub fn register() {
     }
 }
 
+/// Le paquet installe `plume.desktop`, qui déclare le protocole ; reste à en
+/// faire le gestionnaire par défaut de l'utilisateur, comme sous Windows.
 #[cfg(not(windows))]
-pub fn register() {}
+pub fn register() {
+    std::thread::spawn(|| {
+        let _ = std::process::Command::new("xdg-mime")
+            .args(["default", "plume.desktop", "x-scheme-handler/discord"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    });
+}
 
 #[cfg(test)]
 mod tests {

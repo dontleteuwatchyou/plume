@@ -53,7 +53,10 @@ impl Catalog {
         let mut c = Catalog::default();
         for app in apps {
             for exe in app.executables.into_iter().flatten() {
-                if exe.os != "win32" || exe.is_launcher {
+                // Sous Linux, les jeux Windows tournent par Proton ou Wine : on
+                // garde leurs exécutables Windows en plus des natifs.
+                let os_ok = exe.os == "win32" || (cfg!(not(windows)) && exe.os == "linux");
+                if !os_ok || exe.is_launcher {
                     continue;
                 }
                 let name = exe.name.to_lowercase().replace('\\', "/");
@@ -150,9 +153,26 @@ fn processes() -> Vec<(u32, String)> {
     out
 }
 
+/// Linux : l'exécutable de chaque processus, et pour un jeu lancé par Wine ou
+/// Proton, le chemin Windows du `.exe` qu'il a reçu en premier argument
+/// (l'exécutable, lui, est celui de Wine).
 #[cfg(not(windows))]
 fn processes() -> Vec<(u32, String)> {
-    Vec::new()
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+        if let Ok(exe) = std::fs::read_link(entry.path().join("exe")) {
+            out.push((pid, exe.to_string_lossy().into_owned()));
+        }
+        if let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) {
+            let first = cmdline.split(|&b| b == 0).next().unwrap_or_default();
+            let first = String::from_utf8_lossy(first);
+            if first.to_lowercase().ends_with(".exe") {
+                out.push((pid, first.into_owned()));
+            }
+        }
+    }
+    out
 }
 
 fn now_ms() -> u64 {
