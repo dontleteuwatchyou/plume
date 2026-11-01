@@ -45,12 +45,14 @@ pub fn schedule(app: &AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(u64::from(cfg.minutes) * 60));
         let state = app.state::<Sleep>();
-        // Occupé : on réessaie toutes les 30 s tant que rien n'a changé.
+        // Occupé : on réessaie toutes les 30 s tant que rien n'a changé. Un
+        // lecteur réduit ouvert compte comme occupé : c'est cette page qui
+        // dessine dedans, la décharger le viderait (popout.rs).
         loop {
             if state.generation.load(Ordering::SeqCst) != gen {
                 return;
             }
-            if !state.busy.load(Ordering::SeqCst) {
+            if !state.busy.load(Ordering::SeqCst) && !crate::popout::any_open(&app) {
                 break;
             }
             std::thread::sleep(Duration::from_secs(30));

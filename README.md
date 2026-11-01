@@ -43,6 +43,7 @@ Réécrire l'interface de zéro en Rust donne toujours un Discord « presque par
 | **Veille** : Discord déchargé quand Plume ne sert pas (~50-80 Mo), jamais en appel | ❌ | ✅ |
 | **Traqueurs de Discord bloqués** (statistiques d'usage, mesures, rapports d'erreurs), même sans mod | ❌ | ✅ |
 | Notifications Windows natives | ⚠️ selon le navigateur | ✅ |
+| **Lecteur réduit des streams** (« Pop out ») dans une fenêtre Plume au-dessus des autres | ⚠️ selon le navigateur | ✅ |
 | Réduction dans la zone de notification | ❌ | ✅ |
 | Démarrage caché (`--minimized`) | ❌ | ✅ |
 | **Mise à jour automatique** signée, depuis les releases GitHub | — | ✅ |

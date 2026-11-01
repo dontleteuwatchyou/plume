@@ -11,6 +11,7 @@ mod config;
 mod mods;
 mod native;
 mod plugins_backup;
+mod popout;
 mod protocol;
 mod ptt;
 mod recorder;
@@ -66,7 +67,7 @@ pub(crate) fn is_discord(url: &Url) -> bool {
         .any(|d| host == *d || host.ends_with(&format!(".{d}")))
 }
 
-fn open_external(app: &AppHandle, url: &str) {
+pub(crate) fn open_external(app: &AppHandle, url: &str) {
     if url.starts_with("http://") || url.starts_with("https://") {
         let _ = app.opener().open_url(url, None::<&str>);
     }
@@ -108,8 +109,12 @@ fn win_close(window: WebviewWindow) {
 /// Fermer = réduire dans la zone de notification, comme Discord.
 fn hide_to_tray(window: &WebviewWindow) {
     let _ = window.hide();
-    native::set_memory_low(window, true);
-    native::set_rendering(window, false);
+    // Un lecteur réduit est dessiné par cette page : couper son affichage ou
+    // réduire sa mémoire figerait le stream qu'on regarde encore.
+    if !popout::any_open(window.app_handle()) {
+        native::set_memory_low(window, true);
+        native::set_rendering(window, false);
+    }
     if window.label() == MAIN {
         sleep::schedule(window.app_handle());
     }
@@ -208,14 +213,23 @@ fn build_discord(app: &AppHandle, cfg: &Config, label: &str, profile: Option<std
             open_external(&nav_app, url.as_str());
             false
         })
-        .on_new_window(move |url, _| {
+        .on_new_window(move |url, features| {
             // Fichier joint (zip, exe, pdf…) : téléchargé par Plume, comme
             // l'appli, plutôt qu'ouvert dans le navigateur.
             if save::is_attachment(&url) {
                 save::download_in_background(&popup_app, url);
-            } else {
-                open_external(&popup_app, url.as_str());
+                return NewWindowResponse::Deny;
             }
+            // Lecteur réduit d'un stream, appel ou message détaché : Discord
+            // dessine dedans depuis cette page, il lui faut une vraie fenêtre
+            // fille du même moteur (popout.rs).
+            if is_discord(&url) {
+                match popout::build(&popup_app, features) {
+                    Ok(window) => return NewWindowResponse::Create { window },
+                    Err(e) => eprintln!("[plume] lecteur réduit : {e}"),
+                }
+            }
+            open_external(&popup_app, url.as_str());
             NewWindowResponse::Deny
         })
         // Téléchargements (« Enregistrer l'image »…) : la fenêtre de
@@ -342,7 +356,8 @@ fn background_trim(app: &AppHandle, focused: bool) {
         return;
     }
     sleep::schedule(app);
-    if !settings::current(app).trim_in_background {
+    // Idem : un lecteur réduit ouvert vit sur le rendu de cette page.
+    if !settings::current(app).trim_in_background || popout::any_open(app) {
         return;
     }
     std::thread::spawn(move || {
@@ -359,6 +374,7 @@ fn background_trim(app: &AppHandle, focused: bool) {
 /// que l'ancien se ferme échoue, et il n'y avait alors plus de fenêtre du tout.
 pub(crate) fn reload_discord(app: &AppHandle) {
     let Some(w) = app.get_webview_window(MAIN) else { return };
+    popout::close_all(app);
     if let Ok(url) = SPLASH_URL.parse() {
         let _ = w.navigate(url);
     }

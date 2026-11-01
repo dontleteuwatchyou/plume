@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 #[cfg(windows)]
 mod win {
@@ -14,6 +14,7 @@ mod win {
     use webview2_com::{
         take_pwstr, BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, PermissionRequestedEventHandler,
         ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler, WebResourceRequestedEventHandler,
+        WindowCloseRequestedEventHandler,
     };
     use windows::core::{Interface, HSTRING, PWSTR};
 
@@ -80,6 +81,19 @@ mod win {
                 let _ = core.AddWebResourceRequestedFilter(&HSTRING::from(uri), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
             }
             let _ = core.add_WebResourceRequested(&handler, &mut token);
+        }
+    }
+
+    /// `window.close()` depuis la page : wry ne détruit que le conteneur du
+    /// webview, la fenêtre Tauri resterait ouverte et vide.
+    pub fn on_page_close(core: &ICoreWebView2, f: Box<dyn Fn() + Send>) {
+        let handler = WindowCloseRequestedEventHandler::create(Box::new(move |_, _| {
+            f();
+            Ok(())
+        }));
+        let mut token = 0i64;
+        unsafe {
+            let _ = core.add_WindowCloseRequested(&handler, &mut token);
         }
     }
 
@@ -206,7 +220,6 @@ mod win {
 /// tourne. Sinon le nouveau Plume se raccroche à ce moteur mourant, et Windows
 /// range ses processus à part (« WebView2 Manager ») au lieu de sous Plume.
 pub fn wait_previous_engine(app: &tauri::AppHandle) {
-    use tauri::Manager;
     let Ok(dir) = app.path().app_local_data_dir() else { return };
     let lock = dir.join("EBWebView").join("lockfile");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -258,6 +271,36 @@ pub fn set_rendering(w: &WebviewWindow, visible: bool) {
     });
     #[cfg(not(windows))]
     let _ = (w, visible);
+}
+
+/// Ferme la fenêtre quand la page appelle `window.close()`. wry ne détruit
+/// alors que le conteneur du webview : il resterait une fenêtre Plume vide, et
+/// c'est ainsi que Discord referme un lecteur réduit (popout.rs).
+pub fn close_window_on_page_close(w: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let target = w.clone();
+        let _ = w.with_webview(move |wv| unsafe {
+            if let Ok(core) = wv.controller().CoreWebView2() {
+                win::on_page_close(
+                    &core,
+                    Box::new(move || {
+                        // Fermer depuis le gestionnaire WebView2 serait
+                        // réentrant : on repasse par la boucle d'événements.
+                        let w = target.clone();
+                        std::thread::spawn(move || {
+                            let app = w.app_handle().clone();
+                            let _ = app.run_on_main_thread(move || {
+                                let _ = w.close();
+                            });
+                        });
+                    }),
+                );
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = w;
 }
 
 /// Fenêtre cachée dans la zone de notification : WebView2 libère ce qu'il peut.
