@@ -10,6 +10,7 @@
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+    const LINUX = !window.chrome?.webview;
     const MARGIN = 8;
     // Coins prédéfinis, en fraction de la place libre. "bar" est placé à part.
     const SPOTS = { topright: { x: 1, y: 0.08 }, bottomright: { x: 1, y: 0.86 } };
@@ -19,7 +20,7 @@
         ["renderer", "Page Discord", "Le code de Discord et tout ce qu'il garde en mémoire : serveurs, membres, messages, images, plus le mod et ses plugins."],
         ["gpu", "Affichage", "Le processus de la carte graphique : dessin de l'interface, vidéos, streams."],
         ["browser", "Moteur WebView2", "Le chef d'orchestre du moteur web : onglets, réseau, extensions."],
-        ["utility", "Réseau et audio", "Petits processus du moteur : connexions, son, stockage."],
+        ["utility", LINUX ? "Réseau" : "Réseau et audio", LINUX ? "Le processus réseau du moteur : connexions, cache, stockage." : "Petits processus du moteur : connexions, son, stockage."],
         ["plume", "Plume", "L'appli elle-même (fenêtre, zone de notification, push-to-talk)."],
         ["other", "Autres", "Processus annexes du moteur."],
     ];
@@ -116,14 +117,14 @@
         }).join("");
         pop.innerHTML = `
 <h3><span>Mémoire de Plume : ${fmt(total)}</span><button class="x" aria-label="Fermer">✕</button></h3>
-<div class="muted">Tous les processus de Plume, comptés comme la colonne « Mémoire » du Gestionnaire des tâches. Mémoire privée engagée : ${fmt(mb(last.private))}.</div>
+<div class="muted">Tous les processus de Plume, comptés comme ${LINUX ? "la mémoire privée du moniteur système" : "la colonne « Mémoire » du Gestionnaire des tâches"}. Mémoire privée engagée : ${fmt(mb(last.private))}.</div>
 <h4>D'où ça vient</h4>
 ${rows}
 <h4>Comparaison</h4>
 <div class="part"><div class="row"><span>Discord officiel</span><span>~${fmt(OFFICIAL.min)} à ${fmt(OFFICIAL.max)}</span></div>${bar(OFFICIAL.max, scale, "off")}</div>
 <div class="part"><div class="row"><span>Plume, maintenant</span><span>${fmt(total)}</span></div>${bar(total, scale)}</div>
 <div class="part"><div class="row"><span>Plume en veille</span><span>~50 à 80 Mo</span></div>${bar(80, scale, "zz")}</div>
-<p class="muted">Discord officiel : mesuré avec le même compte connecté (voir le README). Il embarque son propre Chromium et son propre Node.js ; Plume réutilise le moteur web déjà dans Windows.</p>
+<p class="muted">Discord officiel : mesuré avec le même compte connecté (voir le README). Il embarque son propre Chromium et son propre Node.js ; ${LINUX ? "Plume se contente de WebKitGTK, un moteur web bien plus léger." : "Plume réutilise le moteur web déjà dans Windows."}</p>
 <div class="note"><b>Pourquoi pas moins ?</b>
 <p>La « Page Discord » (${fmt(page)} ici) est le cœur du chiffre : c'est l'interface officielle de Discord, son code et ses données. Plume l'affiche telle quelle, sans la modifier, c'est ce qui garde Discord à jour et compatible avec les mods. Pour descendre nettement en dessous, il faudrait réécrire toute l'interface de Discord (et perdre les plugins).</p>
 <p>Ce qui marche quand même : la <b>veille</b> (Paramètres Plume → Performances), qui décharge Discord quand tu ne t'en sers pas, et moins de plugins gourmands (les enregistreurs de messages grossissent au fil des heures). Le chiffre monte aussi avec le nombre et la taille des serveurs ouverts.</p></div>`;

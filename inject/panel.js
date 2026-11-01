@@ -5,6 +5,8 @@
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+    // Sous Linux (WebKitGTK), les réglages propres à WebView2 n'ont pas d'effet : on les cache.
+    const LINUX = !window.chrome?.webview;
 
     const PRESETS = {
         voix:   { label: "Voix",    sub: "96 kb/s",  v: { bitrate: 96000,  stereo: false, frameMs: 20, cbr: false, fec: true,  dtx: false } },
@@ -204,20 +206,20 @@ ${toggle("autoUpdate", "Vérifier au démarrage", "Plume cherche une nouvelle ve
 
         perf: () => `
 <h2>Performances</h2>
-<h4>Économie de mémoire</h4>
+${LINUX ? "" : `<h4>Économie de mémoire</h4>
 <p class="muted">Plume redémarre pour appliquer le changement.</p>
 ${MEMORY.map(([v, t, d]) => `<label class="radio" data-mem="${v}"><input type="radio" name="mem" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}
 <h4>Arrière-plan</h4>
-${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}
+${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}`}
 <h4>Démarrage</h4>
-${toggle("autostart", "Lancer Plume au démarrage de Windows", "Plume s'ouvre tout seul quand tu allumes ton PC, caché dans la zone de notification.", "")}
+${toggle("autostart", LINUX ? "Lancer Plume à l'ouverture de session" : "Lancer Plume au démarrage de Windows", "Plume s'ouvre tout seul quand tu allumes ton PC, caché dans la zone de notification.", "")}
 <h4>Veille</h4>
 <div class="row"><div><div class="t">Mettre Discord en veille</div><div class="d">Quand Plume ne sert pas, Discord est déchargé : environ 50 à 80 Mo au lieu de 500. Jamais pendant un appel, un stream ou une vidéo. Il se recharge en quelques secondes quand tu reviens. <b>Pas de notifications pendant la veille.</b></div></div><label class="sw"><input type="checkbox" id="sleepOn"><span></span></label></div>
 <div class="row"><div><div class="t">Délai</div><div class="d">Temps hors du premier plan avant la veille.</div></div>
 <div class="seg" id="sleepMin">${[2, 5, 10, 30].map(v => `<button data-v="${v}">${v} min</button>`).join("")}</div></div>
 <div class="row"><div><div class="t">Seulement dans la zone de notification</div><div class="d">Discord reste chargé quand Plume est juste derrière un jeu ; il ne se met en veille qu'une fois fermé dans la zone de notification.</div></div><label class="sw"><input type="checkbox" id="sleepTray"><span></span></label></div>
 <h4>Affichage</h4>
-<div class="row"><div><div class="t">Compteur de RAM à l'écran</div><div class="d">La mémoire utilisée par Plume, tous ses processus compris, comptée comme dans le Gestionnaire des tâches.</div></div><label class="sw"><input type="checkbox" id="ramOn"><span></span></label></div>
+<div class="row"><div><div class="t">Compteur de RAM à l'écran</div><div class="d">La mémoire utilisée par Plume, tous ses processus compris, comptée comme dans ${LINUX ? "le moniteur système" : "le Gestionnaire des tâches"}.</div></div><label class="sw"><input type="checkbox" id="ramOn"><span></span></label></div>
 <div class="row"><div><div class="t">Contenu du compteur</div><div class="d">Détaillé : mémoire privée, mémoire physique et nombre de processus.</div></div>
 <div class="seg" id="ramMode"><button data-v="0">Compact</button><button data-v="1">Détaillé</button></div></div>
 <div class="row"><div><div class="t">Emplacement</div><div class="d">Le compteur reste à sa place. « Déplacer » le rend déplaçable le temps d'un glisser (Échap pour annuler).</div></div>
