@@ -22,6 +22,7 @@ mod rpc;
 mod save;
 mod settings;
 mod sleep;
+mod streamaudio;
 mod update;
 mod wordbomb;
 
@@ -146,6 +147,9 @@ fn init_scripts(cfg: &Config) -> Vec<String> {
         include_str!("../../inject/backup.js").to_string(),
         include_str!("../../inject/shim.js").to_string(),
         include_str!("../../inject/screenshare.js").to_string(),
+        // Avant stereo.js : il garde le getUserMedia d'origine, sans le
+        // traitement du micro, pour le son du partage.
+        include_str!("../../inject/screenshare-linux.js").to_string(),
         include_str!("../../inject/stereo.js").to_string(),
         include_str!("../../inject/recorder.js").to_string(),
         include_str!("../../inject/ptt.js").to_string(),
@@ -455,7 +459,10 @@ fn main() {
             save::save_url,
             capture::capture_sources,
             capture::capture_start,
-            capture::capture_stop
+            capture::capture_stop,
+            streamaudio::stream_audio_sources,
+            streamaudio::stream_audio_start,
+            streamaudio::stream_audio_stop
         ])
         .manage(ptt::PttKeys::default())
         .manage(update::Pending::default())
