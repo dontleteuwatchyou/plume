@@ -8,6 +8,7 @@
 L'interface officielle de Discord dans une coque Tauri de 5 Mo, avec Nightcord (ou Equicord), le micro en stéréo et le push-to-talk global.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-4c3fb8)
+![Linux](https://img.shields.io/badge/Linux-Arch-4c3fb8)
 ![Tauri](https://img.shields.io/badge/Tauri-2-8b7cf6)
 ![Licence](https://img.shields.io/badge/licence-GPL--3.0-6b5ce0)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-soutenir-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/forsakengh)
@@ -151,7 +152,7 @@ Gain et limiteur, mesurés avec un signal à 0 dBFS :
 
 ## Push-to-talk global
 
-En version web, Discord n'entend ta touche que si sa fenêtre a le focus, ce qui rend le PTT inutilisable en jeu. Plume surveille la touche dans tout Windows (`GetAsyncKeyState`, sans l'intercepter : le jeu la reçoit toujours) et active le micro comme le ferait Discord.
+En version web, Discord n'entend ta touche que si sa fenêtre a le focus, ce qui rend le PTT inutilisable en jeu. Plume surveille la touche dans tout le système, sans l'intercepter (le jeu la reçoit toujours), et active le micro comme le ferait Discord. Sous Windows avec `GetAsyncKeyState` ; sous Linux en lisant l'état du clavier dans le noyau (evdev), seul moyen qui marche aussi bien sous X11 que sous Wayland (GNOME, KDE, Hyprland, Sway…). Il faut alors faire partie du groupe `input` : `sudo usermod -aG input $USER`, puis se reconnecter.
 
 - Nécessite un mod (Nightcord ou Equicord) pour retrouver le moteur vocal de Discord.
 - La touche est **celle que tu as réglée dans Discord** (Paramètres → Voix et vidéo → Appuyer pour parler). Plume la relit toutes les 2 secondes.
@@ -160,7 +161,31 @@ En version web, Discord n'entend ta touche que si sa fenêtre a le focus, ce qui
 
 ## Installation
 
+### Windows
+
 Télécharge `Plume_x.y.z_x64-setup.exe` dans les [Releases](../../releases) et lance-le. Ensuite, Plume se met à jour tout seul : au démarrage, il cherche une nouvelle version et te prévient (notification + pastille verte sur le bouton plume). L'installation se lance depuis **Paramètres Plume → Mises à jour**, jamais sans ton clic. Les paquets sont signés, une version non signée par le projet est refusée. Aucun droit administrateur n'est nécessaire. Si WebView2 manque (rare sous Windows 10), l'installateur le télécharge.
+
+### Linux (Arch et dérivées)
+
+Sous Linux, Plume s'appuie sur WebKitGTK au lieu de WebView2. Aucune distribution ne compile WebKitGTK avec WebRTC, sans lequel Discord n'a ni appel, ni partage d'écran, ni stéréo : Plume a donc son propre WebKitGTK, `plume-webkit`, installé à part dans `/usr/lib/plume` (il ne remplace pas celui du système).
+
+Avec les paquets des [Releases](../../releases) :
+
+```bash
+sudo pacman -U plume-webkit-*.pkg.tar.zst plume-*.pkg.tar.zst
+```
+
+Ou depuis les sources (compter une à trois heures pour WebKit, une seule fois) :
+
+```bash
+git clone https://github.com/dontleteuwatchyou/plume
+cd plume/linux/plume-webkit && makepkg -si
+cd .. && makepkg -si
+```
+
+Tout marche quel que soit le bureau, X11 ou Wayland : la zone de notification passe par le protocole commun (StatusNotifierItem), le partage d'écran par le portail du bureau (`xdg-desktop-portal-hyprland`, `-gnome`, `-kde` ou `-wlr` selon le tien), le son du partage par PipeWire, et le push-to-talk par evdev (voir plus haut). Sous Hyprland, pour le démarrage avec la session, ajoute `exec-once = plume --minimized` (la case « démarrage » écrit `~/.config/autostart/plume.desktop`, que GNOME et KDE lisent tout seuls). Les mises à jour passent par pacman.
+
+Le partage d'écran : l'image vient du sélecteur de ton bureau, puis Plume demande quel son envoyer avec (une application, tout le PC sauf Plume, ou rien). C'est ce qui manque à l'appli Discord officielle sous Wayland.
 
 ## Configuration
 
@@ -171,7 +196,7 @@ Clic droit sur l'icône dans la zone de notification :
 - **Mod** : Nightcord, Equicord ou aucun.
 - **Recharger** : recharge Discord.
 
-Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.json` :
+Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.json` (Linux : `~/.config/app.plume.desktop/config.json`) :
 
 ```json
 {
@@ -198,7 +223,7 @@ Le fichier de configuration se trouve dans `%APPDATA%\app.plume.desktop\config.j
 
 | Clé | Rôle |
 |---|---|
-| `mod` | `nightcord`, `equicord` ou `none` : extension officielle du mod, chargée telle quelle dans WebView2, rafraîchie toutes les 6 h |
+| `mod` | `nightcord`, `equicord` ou `none` : extension officielle du mod, chargée telle quelle dans WebView2 (sous Linux, ses scripts posés avant ceux de Discord), rafraîchie toutes les 6 h |
 | `audio` | tous les réglages du micro, modifiables dans **Paramètres Plume** |
 | `memory` | `standard`, `reduced` ou `max` (redémarrage) |
 | `trimInBackground` | libère la mémoire quand Plume n'est pas au premier plan |
@@ -218,7 +243,7 @@ Les quelques plugins qui demandent des API d'Electron sont inactifs.
 
 ## Construire depuis les sources
 
-Prérequis : [Rust](https://rustup.rs), [Node.js](https://nodejs.org), les Build Tools de Visual Studio (C++).
+Prérequis : [Rust](https://rustup.rs), [Node.js](https://nodejs.org), les Build Tools de Visual Studio (C++). Sous Linux, voir `linux/PKGBUILD` (Rust et `plume-webkit` suffisent).
 
 ```bash
 npm install
@@ -243,12 +268,18 @@ src-tauri/src/
   update.rs     mise à jour automatique (releases GitHub, paquets signés)
   ram.rs        mémoire de Plume et de ses processus WebView2 (compteur de RAM)
   community.rs  compteur d'utilisateurs (Cloudflare Worker, dossier community/)
-  wordbomb.rs   frappe dans l'Activity WordBomb via le DevTools Protocol de WebView2
+  wordbomb.rs   frappe dans l'Activity WordBomb (DevTools Protocol de WebView2, événements GTK sous Linux)
+  modserver.rs  Linux : fichiers du mod servis en boucle locale (WebKitGTK ne charge pas d'extension)
+  streamaudio.rs Linux : son du partage d'écran par PipeWire
+linux/
+  PKGBUILD      paquet Arch de Plume
+  plume-webkit/ WebKitGTK avec WebRTC, à préfixe privé
 inject/
   shim.js       notifications Windows natives
   stereo.js     audio WebRTC : RNNoise, égaliseur, gain, limiteur, stéréo, débit, trame… + diagnostic
   panel.js      Paramètres Plume dans Discord, visualiseur
   ptt.js        branchement du PTT global sur le moteur vocal de Discord
+  screenshare-linux.js  Linux : partage d'écran du portail + choix du son
   theme.css     thème Plume : palettes de Discord recolorées (mêmes luminosités) + fonds nuit violette
   theme.js      application du thème + réglage dans Paramètres Discord → Apparence
   brand.js      logo et nom Plume à la place de ceux de Discord

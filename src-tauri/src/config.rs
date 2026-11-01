@@ -280,7 +280,9 @@ impl Config {
         // fenêtre, donc le profil n'existe pas encore chez un nouveau venu.
         // Sans ce second test, une config illisible coupait tous les plugins
         // de quelqu'un qui utilisait déjà Plume (vu en 0.3.12).
-        let profile = app.path().app_local_data_dir().map(|d| d.join("EBWebView").exists()).unwrap_or(true);
+        // (WebKitGTK range ses réglages de page dans `localstorage`.)
+        let engine = if cfg!(windows) { "EBWebView" } else { "localstorage" };
+        let profile = app.path().app_local_data_dir().map(|d| d.join(engine).exists()).unwrap_or(true);
         let fresh = text.is_none() && !profile;
         let mut cfg: Self = text.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();        cfg.sanitize();
         let mut dirty = false;
