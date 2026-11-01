@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Plume
+GenericName=Client Discord
+Comment=Discord, sans Electron
+Exec=plume %U
+Icon=plume
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+MimeType=x-scheme-handler/discord;
+StartupWMClass=plume
+Keywords=discord;chat;vocal;

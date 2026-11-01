@@ -37,7 +37,15 @@ pub struct UpdateInfo {
     error: Option<String>,
 }
 
+/// Sous Linux, Plume s'installe par le gestionnaire de paquets (PKGBUILD) :
+/// c'est lui qui le met à jour, avec le moteur web qui va avec.
+#[cfg(not(windows))]
+const PACKAGED: &str = "Plume est installé par ton gestionnaire de paquets : il se met à jour avec lui (paru -Syu, yay -Syu…).";
+
 async fn check(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
+    #[cfg(not(windows))]
+    return Err(PACKAGED.into());
+    #[allow(unreachable_code)]
     app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())
 }
 
@@ -63,7 +71,9 @@ pub async fn update_check(app: AppHandle) -> UpdateInfo {
             available: false,
             version: None,
             notes: None,
-            error: Some(if e.contains("valid release JSON") {
+            error: Some(if e.starts_with("Plume est installé") {
+                e
+            } else if e.contains("valid release JSON") {
                 "Aucune version avec mise à jour automatique n'est encore publiée (latest.json absent de la dernière release).".into()
             } else {
                 format!("GitHub injoignable : {e}")

@@ -1,0 +1,13 @@
+post_install() {
+  cat <<'MSG'
+==> Plume : le push-to-talk global lit l'état du clavier dans le noyau (evdev),
+    seul moyen qui marche sous X11 comme sous tous les compositeurs Wayland.
+    Pour l'activer, ajoute-toi au groupe input puis reconnecte-toi :
+      sudo usermod -aG input "$USER"
+    Sans ça, le push-to-talk marche quand la fenêtre de Plume a le focus.
+MSG
+}
+
+post_upgrade() {
+  :
+}

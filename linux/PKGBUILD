@@ -1,0 +1,69 @@
+# Maintainer: dontleteuwatchyou
+#
+# Plume pour Arch Linux. Le moteur web est plume-webkit (WebKitGTK avec
+# WebRTC), sans quoi Discord n'a ni appel, ni stéréo, ni partage d'écran.
+
+pkgname=plume
+pkgver=0.3.16
+pkgrel=1
+pkgdesc="Client Discord léger : discord.com/app avec Plumecord, le micro en stéréo et le push-to-talk global"
+arch=(x86_64)
+url="https://github.com/dontleteuwatchyou/plume"
+license=(GPL-3.0-or-later)
+depends=(
+  plume-webkit
+  gtk3
+  libayatana-appindicator
+  # Moteur vocal de WebKit : webrtcbin, ICE, Opus, et PipeWire pour le
+  # partage d'écran par le portail du bureau.
+  gst-plugins-base
+  gst-plugins-good
+  gst-plugins-bad
+  gst-plugin-pipewire
+  libnice
+  xdg-desktop-portal
+  xdg-utils
+)
+makedepends=(cargo git)
+optdepends=(
+  'xdg-desktop-portal-hyprland: partage d écran sous Hyprland'
+  'xdg-desktop-portal-gnome: partage d écran sous GNOME'
+  'xdg-desktop-portal-kde: partage d écran sous KDE'
+  'xdg-desktop-portal-wlr: partage d écran sous Sway et wlroots'
+)
+install=plume.install
+source=("git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+prepare() {
+  cd plume/src-tauri
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd plume/src-tauri
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  # Compilé contre plume-webkit, et le retrouve à l'exécution (DT_RPATH, qui
+  # vaut aussi pour les bibliothèques que WebKit charge lui-même).
+  export PKG_CONFIG_PATH=/usr/lib/plume/lib/pkgconfig
+  export RUSTFLAGS="$RUSTFLAGS -C link-arg=-Wl,--disable-new-dtags,-rpath,/usr/lib/plume/lib"
+  # `custom-protocol` : les pages de Plume (dist/) embarquées dans le binaire,
+  # ce que fait `tauri build`.
+  cargo build --frozen --release --features tauri/custom-protocol
+}
+
+check() {
+  cd plume/src-tauri
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target PKG_CONFIG_PATH=/usr/lib/plume/lib/pkgconfig
+  cargo test --frozen --release --features tauri/custom-protocol
+}
+
+package() {
+  cd plume
+  install -Dm755 src-tauri/target/release/plume "$pkgdir/usr/bin/plume"
+  install -Dm644 linux/plume.desktop "$pkgdir/usr/share/applications/plume.desktop"
+  install -Dm644 assets/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/plume.svg"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/plume.png"
+  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/plume.png"
+}
