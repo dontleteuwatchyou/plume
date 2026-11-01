@@ -32,6 +32,9 @@ optdepends=(
   'xdg-desktop-portal-wlr: partage d écran sous Sway et wlroots'
 )
 install=plume.install
+# Le LTO de makepkg compile le C de `ring` en bitcode que l'édition de liens de
+# Rust ne lit pas (symboles introuvables) ; Rust optimise déjà tout seul.
+options=(!lto)
 source=("git+$url.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
