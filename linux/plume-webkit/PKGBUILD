@@ -111,6 +111,12 @@ makedepends=(
   unifdef
   wayland-protocols
 )
+# Le LTO fait exploser l'édition de liens de JavaScriptCore : plusieurs gigaoctets
+# pour un seul lien, que le noyau tue sur une machine à 8 Go. Sans lui ça passe,
+# et la compilation est bien plus courte. Sans les symboles de débogage non plus :
+# ils pesaient autant que le reste du paquet.
+options=(!lto !debug)
+
 source=(
   $url/releases/webkitgtk-$pkgver.tar.xz{,.asc}
 )

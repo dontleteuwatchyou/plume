@@ -183,6 +183,8 @@ cd plume/linux/plume-webkit && makepkg -si
 cd .. && makepkg -si
 ```
 
+Avec 8 Go de mémoire ou moins, limite les compilations en parallèle pour WebKit, sinon la dernière étape (l'édition de liens) est tuée faute de mémoire : `CMAKE_BUILD_PARALLEL_LEVEL=4 makepkg -si`.
+
 Tout marche quel que soit le bureau, X11 ou Wayland : la zone de notification passe par le protocole commun (StatusNotifierItem), le partage d'écran par le portail du bureau (`xdg-desktop-portal-hyprland`, `-gnome`, `-kde` ou `-wlr` selon le tien), le son du partage par PipeWire, et le push-to-talk par evdev (voir plus haut). Sous Hyprland, pour le démarrage avec la session, ajoute `exec-once = plume --minimized` (la case « démarrage » écrit `~/.config/autostart/plume.desktop`, que GNOME et KDE lisent tout seuls). Les mises à jour passent par pacman.
 
 Le partage d'écran : l'image vient du sélecteur de ton bureau, puis Plume demande quel son envoyer avec (une application, tout le PC sauf Plume, ou rien). C'est ce qui manque à l'appli Discord officielle sous Wayland.

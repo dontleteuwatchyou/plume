@@ -4,7 +4,7 @@
 # WebRTC), sans quoi Discord n'a ni appel, ni stéréo, ni partage d'écran.
 
 pkgname=plume
-pkgver=0.3.16
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="Client Discord léger : discord.com/app avec Plumecord, le micro en stéréo et le push-to-talk global"
 arch=(x86_64)
