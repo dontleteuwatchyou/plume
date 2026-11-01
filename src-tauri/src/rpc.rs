@@ -3,8 +3,9 @@
 //! web n'en a pas. Plume ouvre ce tube, comprend les messages comme l'appli
 //! (même protocole que arRPC) et passe l'activité à la page (inject/activity.js).
 //!
-//! Le tube refuse les connexions réseau : seuls les programmes de ce PC y ont
-//! accès, comme pour l'appli Discord.
+//! Le canal reste local des deux côtés : tube nommé sous Windows, socket
+//! Unix `$XDG_RUNTIME_DIR/discord-ipc-N` ailleurs. Seuls les programmes de
+//! cette session y ont accès, comme pour l'appli Discord.
 
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -183,7 +184,37 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+pub fn spawn(app: AppHandle) {
+    use std::os::unix::net::{UnixListener, UnixStream};
+
+    std::thread::spawn(move || {
+        // Là où l'appli Discord la pose, donc là où les jeux la cherchent.
+        let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        // Les jeux essaient discord-ipc-0 à 9 : on prend la première libre (si
+        // l'appli Discord tourne aussi, elle garde la 0 et ses jeux).
+        let Some(listener) = (0..10).find_map(|i| {
+            let path = dir.join(format!("discord-ipc-{i}"));
+            // Une socket laissée par un processus mort occuperait la place pour
+            // rien : on ne retire que celles où plus personne ne répond.
+            if path.exists() && UnixStream::connect(&path).is_err() {
+                let _ = std::fs::remove_file(&path);
+            }
+            UnixListener::bind(&path).ok()
+        }) else {
+            eprintln!("[plume] rich presence : aucune socket discord-ipc libre");
+            return;
+        };
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        for conn in listener.incoming().flatten() {
+            let app = app.clone();
+            let socket_id = format!("plume-rpc-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+            std::thread::spawn(move || serve(&app, conn, socket_id));
+        }
+    });
+}
+
+#[cfg(not(any(windows, unix)))]
 pub fn spawn(_: AppHandle) {}
 
 #[cfg(test)]

@@ -1,7 +1,8 @@
-//! Mémoire de Plume pour le compteur à l'écran (inject/ram.js) : plume.exe et
-//! tous les processus qu'il a lancés (le moteur WebView2 et ses pages), comme
-//! scripts/ram.ps1. Détaillée par rôle (page Discord, carte graphique…)
-//! d'après WebView2, pour le panneau qui explique d'où vient le chiffre.
+//! Mémoire de Plume pour le compteur à l'écran (inject/ram.js) : le programme
+//! et tous les processus qu'il a lancés (le moteur web et ses pages), comme
+//! scripts/ram.ps1. Détaillée par rôle (page Discord, carte graphique…) pour
+//! le panneau qui explique d'où vient le chiffre : WebView2 sait le dire
+//! lui-même, WebKitGTK se lit dans le nom de ses processus.
 
 use std::collections::HashMap;
 
@@ -138,7 +139,73 @@ fn measure(kinds: &HashMap<u32, &'static str>) -> Ram {
     ram
 }
 
+/// Hors Windows : tout se lit dans `/proc`.
 #[cfg(not(windows))]
 fn measure(_: &HashMap<u32, &'static str>) -> Ram {
-    Ram::default()
+    let mut ram = Ram::default();
+    let (mut children, mut names) = (HashMap::<u32, Vec<u32>>::new(), HashMap::<u32, String>::new());
+    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+        // `status` plutôt que `stat` : le nom y est entier et sans parenthèses
+        // à démêler.
+        let Ok(status) = std::fs::read_to_string(entry.path().join("status")) else { continue };
+        let mut parent = None;
+        for line in status.lines() {
+            if let Some(v) = line.strip_prefix("Name:") {
+                names.insert(pid, v.trim().to_string());
+            } else if let Some(v) = line.strip_prefix("PPid:") {
+                parent = v.trim().parse::<u32>().ok();
+            }
+        }
+        match parent {
+            Some(p) if p != pid => children.entry(p).or_default().push(pid),
+            _ => {}
+        }
+    }
+    let me = std::process::id();
+    let mut todo = vec![me];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(pid) = todo.pop() {
+        if !seen.insert(pid) {
+            continue;
+        }
+        if let Some(c) = children.get(&pid) {
+            todo.extend(c);
+        }
+        let Some(m) = rollup(pid) else { continue };
+        let kind = if pid == me { "plume" } else { role(names.get(&pid).map_or("", String::as_str)) };
+        ram.total.add(&m);
+        ram.parts.entry(kind).or_default().add(&m);
+    }
+    ram
+}
+
+/// `smaps_rollup` donne en une lecture ce que Windows appelle mémoire privée
+/// et jeu de travail. Les valeurs y sont en kibioctets.
+#[cfg(not(windows))]
+fn rollup(pid: u32) -> Option<Mem> {
+    let text = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?;
+    let field = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key)?.split_whitespace().next()?.parse::<u64>().ok())
+            .unwrap_or(0)
+            * 1024
+    };
+    let (clean, dirty) = (field("Private_Clean:"), field("Private_Dirty:"));
+    Some(Mem { private: dirty + field("Swap:"), private_working: clean + dirty, working: field("Rss:"), processes: 1 })
+}
+
+/// WebKitGTK lance un processus par rôle et le nomme en conséquence. Le nom
+/// lu dans `/proc` est tronqué à quinze caractères, d'où les préfixes.
+#[cfg(not(windows))]
+fn role(name: &str) -> &'static str {
+    if name.starts_with("WebKitWebProc") {
+        "renderer"
+    } else if name.starts_with("WebKitGPUProc") {
+        "gpu"
+    } else if name.starts_with("WebKitNetwork") {
+        "utility"
+    } else {
+        "other"
+    }
 }
