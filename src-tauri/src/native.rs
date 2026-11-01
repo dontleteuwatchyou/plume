@@ -12,42 +12,11 @@ mod win {
 
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     use webview2_com::{
-        take_pwstr, BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler, PermissionRequestedEventHandler,
+        take_pwstr, BrowserExtensionEnableCompletedHandler, BrowserExtensionRemoveCompletedHandler,
         ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler, WebResourceRequestedEventHandler,
         WindowCloseRequestedEventHandler,
     };
     use windows::core::{Interface, HSTRING, PWSTR};
-
-    /// Discord demande micro, caméra, notifications, presse-papiers : on accorde
-    /// sans fenêtre de confirmation, mais seulement à Discord.
-    pub fn allow_permissions(core: &ICoreWebView2) {
-        let handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
-            let Some(args) = args else { return Ok(()) };
-            unsafe {
-                let mut uri = PWSTR::null();
-                args.Uri(&mut uri)?;
-                let uri = take_pwstr(uri);
-                let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
-                args.PermissionKind(&mut kind)?;
-                let allowed = [
-                    COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
-                    COREWEBVIEW2_PERMISSION_KIND_CAMERA,
-                    COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS,
-                    COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ,
-                    COREWEBVIEW2_PERMISSION_KIND_AUTOPLAY,
-                ];
-                let discord = tauri::Url::parse(&uri).map(|u| crate::is_discord(&u)).unwrap_or(false);
-                if discord && allowed.contains(&kind) {
-                    args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
-                }
-            }
-            Ok(())
-        }));
-        let mut token = 0i64;
-        unsafe {
-            let _ = core.add_PermissionRequested(&handler, &mut token);
-        }
-    }
 
     /// Télémétrie de Discord, comme Legcord : statistiques d'usage (`science`),
     /// mesures de performance (`metrics`) et rapports d'erreurs (Sentry).
@@ -215,6 +184,81 @@ mod win {
     }
 }
 
+/// WebKitGTK ne charge pas d'extension : le mod y est posé à la main, sous la
+/// forme de scripts utilisateur exécutés avant le code de Discord — exactement
+/// ce que l'extension fait dans Chrome.
+#[cfg(not(windows))]
+mod unix {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use webkit2gtk::{UserContentInjectedFrames, UserContentManagerExt, UserScript, UserScriptInjectionTime, WebView, WebViewExt};
+
+    thread_local! {
+        /// Les scripts que Plume a posés sur chaque fenêtre, pour les retirer au
+        /// changement de mod : `remove_all_scripts` emporterait aussi ceux de
+        /// Tauri (l'IPC et tout `inject/`). Les objets GTK ne quittent pas le
+        /// fil de l'interface, d'où le `thread_local`.
+        static ADDED: RefCell<HashMap<String, Vec<UserScript>>> = RefCell::new(HashMap::new());
+    }
+
+    /// Le mod ne s'applique qu'aux pages de Discord, comme le `matches` du
+    /// manifeste. Cadre du haut seulement : l'extension vise aussi les
+    /// sous-cadres, mais y reparser huit mégaoctets pour chaque captcha ou
+    /// activité intégrée ne sert à rien.
+    const MATCHES: [&str; 2] = ["*://discord.com/*", "*://*.discord.com/*"];
+
+    fn add(manager: &webkit2gtk::UserContentManager, label: &str, source: &str) {
+        let script = UserScript::new(
+            source,
+            UserContentInjectedFrames::TopFrame,
+            UserScriptInjectionTime::Start,
+            &MATCHES,
+            &[],
+        );
+        manager.add_script(&script);
+        ADDED.with(|a| a.borrow_mut().entry(label.to_string()).or_default().push(script));
+    }
+
+    pub fn install_mod(view: &WebView, label: &str, folder: Option<PathBuf>) {
+        let Some(manager) = view.user_content_manager() else { return };
+        ADDED.with(|a| {
+            if let Some(old) = a.borrow_mut().remove(label) {
+                for script in old {
+                    manager.remove_script(&script);
+                }
+            }
+        });
+        let Some(folder) = folder else { return };
+        let Some(bundle) = crate::mods::bundle(&folder) else {
+            eprintln!("[plume] mod : bundle introuvable dans {}", folder.display());
+            return;
+        };
+        let source = match std::fs::read_to_string(folder.join(&bundle.script)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[plume] mod : {e}");
+                return;
+            }
+        };
+        // Le mod réclame sa feuille de style et l'éditeur QuickCSS par leur
+        // adresse ; le serveur local les lui donne (modserver.rs).
+        let base = crate::modserver::serve(folder).unwrap_or_default();
+        let json = |v: &str| serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into());
+        // Ce que `content.js` fait dans l'extension.
+        let shim = format!(
+            "(() => {{ const meta = {{ EXTENSION_VERSION: {}, EXTENSION_BASE_URL: {}, RENDERER_CSS_URL: {} }};
+             addEventListener('DOMContentLoaded', () => window.postMessage({{ type: 'vencord:meta', meta }}, '*'), {{ once: true }}); }})();",
+            json(&bundle.version),
+            json(&base),
+            json(&format!("{base}{}", bundle.css)),
+        );
+        add(&manager, label, &shim);
+        add(&manager, label, &source);
+    }
+}
+
 /// Attend (5 s au plus) que le moteur WebView2 d'un Plume précédent ait fini de
 /// se fermer : il garde `EBWebView\lockfile` ouvert en exclusif tant qu'il
 /// tourne. Sinon le nouveau Plume se raccroche à ce moteur mourant, et Windows
@@ -232,10 +276,36 @@ pub fn wait_previous_engine(app: &tauri::AppHandle) {
 }
 
 pub fn setup_webview(w: &WebviewWindow) {
+    #[cfg(not(windows))]
+    {
+        use webkit2gtk::{SecurityManagerExt, SettingsExt, WebContextExt, WebViewExt};
+        let _ = w.with_webview(|wv| {
+            let view = wv.inner();
+            // Les fichiers du mod sont servis en clair sur la boucle locale
+            // (modserver.rs), et WebKit refuse tout contenu en clair dans une
+            // page https. Chrome et Firefox font une exception pour
+            // 127.0.0.1, considéré comme sûr par nature ; WebKitGTK ne la fait
+            // pas, on la lui déclare. L'ouverture reste étroite : la politique
+            // de sécurité de Discord, elle, n'autorise qu'une seule adresse en
+            // clair, `http://127.0.0.1:*`, et rien d'autre.
+            if let Some(manager) = view.web_context().and_then(|c| c.security_manager()) {
+                manager.register_uri_scheme_as_secure("http");
+            }
+            let Some(settings) = view.settings() else { return };
+            // WebKitGTK livre le moteur vocal éteint : sans ça, la page n'a ni
+            // getUserMedia ni RTCPeerConnection, donc ni appel ni stéréo.
+            settings.set_enable_media_stream(true);
+            settings.set_enable_webrtc(true);
+            settings.set_enable_mediasource(true);
+            // Pas de moteur de débogage distant sous WebKitGTK : en build de
+            // développement, la console de la page part sur la sortie standard.
+            #[cfg(debug_assertions)]
+            settings.set_enable_write_console_messages_to_stdout(true);
+        });
+    }
     #[cfg(windows)]
     let _ = w.with_webview(|wv| unsafe {
         if let Ok(core) = wv.controller().CoreWebView2() {
-            win::allow_permissions(&core);
             win::block_trackers(&core, wv.environment());
         }
     });
@@ -256,8 +326,20 @@ pub fn install_extension(w: &WebviewWindow, folder: Option<PathBuf>, then: impl 
     }
     #[cfg(not(windows))]
     {
-        let _ = (w, folder);
-        then();
+        let label = w.label().to_string();
+        let app = w.app_handle().clone();
+        let then: Box<dyn FnOnce() + Send> = Box::new(then);
+        let _ = w.with_webview(move |wv| {
+            unix::install_mod(&wv.inner(), &label, folder);
+            // `then` navigue et écrit dans la page. Le faire ici, encore à
+            // l'intérieur du message `with_webview`, bloque le fil principal :
+            // l'évaluation de wry attend un verrou que la boucle GTK tient
+            // encore. On remet donc le rappel en file depuis un autre fil, pour
+            // qu'il soit traité au tour suivant de la boucle.
+            std::thread::spawn(move || {
+                let _ = app.run_on_main_thread(then);
+            });
+        });
     }
 }
 

@@ -189,6 +189,47 @@ pub fn prepare(app: &AppHandle, m: ClientMod) -> Option<PathBuf> {
     Some(current)
 }
 
+/// Ce qu'il faut pour charger le mod là où il n'y a pas de moteur
+/// d'extensions (native.rs, hors Windows) : le bundle que l'extension
+/// injecterait dans le monde principal de la page, et la version de son
+/// manifeste. Les chemins sont relatifs au dossier du mod, parce qu'ils
+/// servent aussi d'adresses sur le serveur local (modserver.rs).
+#[cfg(not(windows))]
+pub struct Bundle {
+    pub script: String,
+    pub css: String,
+    pub version: String,
+}
+
+#[cfg(not(windows))]
+pub fn bundle(folder: &Path) -> Option<Bundle> {
+    #[derive(Deserialize)]
+    struct ContentScript {
+        #[serde(default)]
+        js: Vec<String>,
+        #[serde(default)]
+        world: String,
+    }
+    #[derive(Deserialize)]
+    struct Manifest {
+        #[serde(default)]
+        content_scripts: Vec<ContentScript>,
+        #[serde(default)]
+        version: String,
+    }
+    let manifest: Manifest = serde_json::from_slice(&std::fs::read(folder.join("manifest.json")).ok()?).ok()?;
+    let script = manifest
+        .content_scripts
+        .iter()
+        .find(|c| c.world.eq_ignore_ascii_case("main"))
+        .and_then(|c| c.js.first())
+        .filter(|js| folder.join(js).is_file())?
+        .clone();
+    // L'extension sert sa feuille de style à côté du bundle, sous le même nom.
+    let css = format!("{}.css", script.strip_suffix(".js").unwrap_or(&script));
+    Some(Bundle { script, css, version: manifest.version })
+}
+
 /// Identifiant que Chromium donne à une extension non empaquetée : SHA-256 du
 /// chemin (UTF-16, tel quel), 16 premiers octets écrits avec les lettres a à p.
 pub fn extension_id(path: &Path) -> String {

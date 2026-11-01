@@ -1,6 +1,13 @@
-//! Pastille rouge sur l'icône de la barre des tâches, comme l'appli Discord :
-//! le nombre de mentions non lues (inject/desktop.js le lit dans le titre de
-//! la page). Dessinée ici, en pixels : pas de police à embarquer.
+//! Pastille rouge avec le nombre de mentions non lues, comme l'appli Discord
+//! (inject/desktop.js le lit dans le titre de la page). Dessinée ici, en
+//! pixels : pas de police à embarquer.
+//!
+//! Où elle se pose dépend du système. Windows a une pastille par fenêtre dans
+//! la barre des tâches. Les bureaux Linux n'ont rien de commun à cet endroit
+//! (GNOME, KDE et Hyprland ne montrent même pas la même chose), mais ils
+//! affichent tous la zone de notification par le même protocole
+//! (StatusNotifierItem) : la pastille va donc sur l'icône de Plume qui s'y
+//! trouve déjà.
 
 use tauri::image::Image;
 use tauri::WebviewWindow;
@@ -52,8 +59,52 @@ fn render(count: u32) -> Vec<u8> {
 
 #[tauri::command]
 pub fn set_badge(window: WebviewWindow, count: u32) {
+    apply(&window, count);
+}
+
+#[cfg(windows)]
+fn apply(window: &WebviewWindow, count: u32) {
     let icon = (count > 0).then(|| Image::new_owned(render(count), SIZE as u32, SIZE as u32));
     let _ = window.set_overlay_icon(icon);
+}
+
+/// L'icône de la zone de notification, avec la pastille dans son coin.
+#[cfg(not(windows))]
+fn apply(window: &WebviewWindow, count: u32) {
+    use tauri::Manager;
+
+    let app = window.app_handle();
+    let Some(tray) = app.tray_by_id("tray") else { return };
+    let Some(base) = app.default_window_icon() else { return };
+    let icon = if count == 0 { base.clone().to_owned() } else { stamp(base, count) };
+    let _ = tray.set_icon(Some(icon));
+}
+
+/// Pose la pastille sur les trois cinquièmes bas-droite de `base`, en
+/// échantillonnant au plus proche : l'icône de la zone de notification fait
+/// rarement 32 pixels.
+#[cfg(not(windows))]
+fn stamp(base: &Image<'_>, count: u32) -> Image<'static> {
+    let (w, h) = (base.width() as usize, base.height() as usize);
+    let mut px = base.rgba().to_vec();
+    let badge = render(count);
+    let side = (w.min(h) * 3 / 5).max(1);
+    let (x0, y0) = (w - side, h - side);
+    for y in 0..side {
+        for x in 0..side {
+            let src = ((y * SIZE / side) * SIZE + x * SIZE / side) * 4;
+            let a = u32::from(badge[src + 3]);
+            if a == 0 {
+                continue;
+            }
+            let dst = ((y0 + y) * w + x0 + x) * 4;
+            for c in 0..3 {
+                px[dst + c] = ((u32::from(badge[src + c]) * a + u32::from(px[dst + c]) * (255 - a)) / 255) as u8;
+            }
+            px[dst + 3] = px[dst + 3].max(badge[src + 3]);
+        }
+    }
+    Image::new_owned(px, w as u32, h as u32)
 }
 
 #[cfg(test)]

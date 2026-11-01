@@ -22,6 +22,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 tauri-plugin-updater = "2"
 
+[target.'cfg(not(windows))'.dependencies]
+# Le mod est posé à la main sur WebKitGTK, qui ne charge pas d'extension (native.rs).
+webkit2gtk = { version = "2.0", features = ["v2_38"] }
+
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 # Pour #[implement] (rappel COM de la capture audio, loopback.rs).

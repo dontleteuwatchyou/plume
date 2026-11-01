@@ -9,6 +9,8 @@ mod community;
 mod loopback;
 mod config;
 mod mods;
+#[cfg(not(windows))]
+mod modserver;
 mod native;
 mod plugins_backup;
 mod popout;
@@ -212,6 +214,28 @@ fn build_discord(app: &AppHandle, cfg: &Config, label: &str, profile: Option<std
             }
             open_external(&nav_app, url.as_str());
             false
+        })
+        // Discord demande micro, caméra, notifications, presse-papiers : on
+        // accorde sans fenêtre de confirmation, mais seulement à Discord.
+        // Indispensable sous Linux, où WebKitGTK refuse tout par défaut.
+        .on_permission_request(|webview, kind| {
+            use tauri::webview::{PermissionKind, PermissionResponse};
+            if !webview.url().map(|u| is_discord(&u)).unwrap_or(false) {
+                return PermissionResponse::Deny;
+            }
+            match kind {
+                PermissionKind::Microphone
+                | PermissionKind::Camera
+                | PermissionKind::Notifications
+                | PermissionKind::ClipboardRead
+                | PermissionKind::Autoplay => PermissionResponse::Allow,
+                // Le partage d'écran passe par le portail du bureau, qui
+                // demande lui-même quoi partager ; sous Windows c'est le
+                // sélecteur de Plume (capture.rs) qui s'en charge.
+                #[cfg(not(windows))]
+                PermissionKind::DisplayCapture => PermissionResponse::Allow,
+                _ => PermissionResponse::Default,
+            }
         })
         .on_new_window(move |url, features| {
             // Fichier joint (zip, exe, pdf…) : téléchargé par Plume, comme
