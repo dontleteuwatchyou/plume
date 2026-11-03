@@ -9,7 +9,7 @@ mod community;
 mod loopback;
 mod config;
 mod mods;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 mod modserver;
 mod native;
 mod plugins_backup;
@@ -18,6 +18,7 @@ mod protocol;
 mod ptt;
 mod recorder;
 mod ram;
+mod rt;
 mod rpc;
 mod save;
 mod settings;
@@ -32,7 +33,8 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::window::Color;
-use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{Manager, Url, WebviewUrl, WindowEvent};
+use crate::rt::{AppHandle, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_window_state::StateFlags;
@@ -301,6 +303,11 @@ fn build_discord(app: &AppHandle, cfg: &Config, label: &str, profile: Option<std
     for s in init_scripts(cfg) {
         builder = builder.initialization_script(s);
     }
+    // Sous Linux le mod n'est pas une extension : son script d'amorçage.
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.initialization_script(modserver::loader(label));
+    }
     if let Some(dir) = profile {
         builder = builder.data_directory(dir);
     }
@@ -424,7 +431,15 @@ pub(crate) fn reload_discord(app: &AppHandle) {
 }
 
 fn main() {
-    tauri::Builder::default()
+    #[cfg(target_os = "linux")]
+    if rt::cef::boot() {
+        return;
+    }
+    let builder = tauri::Builder::<rt::Runtime>::default();
+    // Le mod, servi à la page (modserver.rs).
+    #[cfg(target_os = "linux")]
+    let builder = builder.register_uri_scheme_protocol(rt::cef::MOD_SCHEME, |_, request| modserver::handle(&request));
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             show_main(app);
             protocol::handle(app, &args);
@@ -484,6 +499,14 @@ fn main() {
         .manage(sleep::Sleep::default())
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(target_os = "linux")]
+            {
+                // GTK pour la zone de notification et ses menus ; CEF tourne
+                // sur la boucle GLib, qui sert aussi GTK.
+                gtk::init().map_err(|e| format!("gtk::init : {e}"))?;
+                tauri_runtime_cef::install_x_error_handlers();
+                rt::cef::set_app(&handle);
+            }
             let cfg = Config::load(&handle);
             app.manage(Mutex::new(cfg.clone()));
             native::wait_previous_engine(&handle);

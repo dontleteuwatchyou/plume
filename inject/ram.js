@@ -19,7 +19,7 @@
     const PARTS = [
         ["renderer", "Page Discord", "Le code de Discord et tout ce qu'il garde en mémoire : serveurs, membres, messages, images, plus le mod et ses plugins."],
         ["gpu", "Affichage", "Le processus de la carte graphique : dessin de l'interface, vidéos, streams."],
-        ["browser", "Moteur WebView2", "Le chef d'orchestre du moteur web : onglets, réseau, extensions."],
+        ["browser", LINUX ? "Moteur Chromium" : "Moteur WebView2", "Le chef d'orchestre du moteur web : onglets, réseau, extensions."],
         ["utility", LINUX ? "Réseau" : "Réseau et audio", LINUX ? "Le processus réseau du moteur : connexions, cache, stockage." : "Petits processus du moteur : connexions, son, stockage."],
         ["plume", "Plume", "L'appli elle-même (fenêtre, zone de notification, push-to-talk)."],
         ["other", "Autres", "Processus annexes du moteur."],
@@ -92,15 +92,18 @@
         placePop();
     }
 
+    // Dernier HTML écrit dans le compteur : ne pas réécrire (ni reforcer le
+    // layout de `place()`) toutes les 2 s quand le chiffre affiché n'a pas bougé.
+    let lastHtml = "";
     function draw() {
         if (!el) return;
         const logo = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b7cf6" stroke-width="2"><path d="M4 21c4-4 6-8 7-14 4 1 8 0 9-4-1 8-6 13-13 14"/><path d="M4 21 15 9"/></svg>';
-        if (!last) { el.innerHTML = `${logo}<span class="k">RAM</span><span>…</span>`; place(); return; }
+        if (!last) { if (lastHtml !== "…") { lastHtml = "…"; el.innerHTML = `${logo}<span class="k">RAM</span><span>…</span>`; place(); } return; }
         el.title = editing ? "Glisse le compteur où tu veux. Échap pour annuler." : "Clique pour voir le détail";
-        el.innerHTML = w.detailed
+        const html = w.detailed
             ? `${logo}<span class="k">RAM</span><span>${fmt(mb(last.privateWorking))}</span><span class="sep"></span><span class="k">Engagée</span><span>${fmt(mb(last.private))}</span><span class="sep"></span><span>${last.processes} proc.</span>`
             : `${logo}<span class="k">RAM</span><span>${fmt(mb(last.privateWorking))}</span>`;
-        place();
+        if (html !== lastHtml) { lastHtml = html; el.innerHTML = html; place(); }
         if (pop && !pop.hidden) drawPop();
     }
 
@@ -124,7 +127,7 @@ ${rows}
 <div class="part"><div class="row"><span>Discord officiel</span><span>~${fmt(OFFICIAL.min)} à ${fmt(OFFICIAL.max)}</span></div>${bar(OFFICIAL.max, scale, "off")}</div>
 <div class="part"><div class="row"><span>Plume, maintenant</span><span>${fmt(total)}</span></div>${bar(total, scale)}</div>
 <div class="part"><div class="row"><span>Plume en veille</span><span>~50 à 80 Mo</span></div>${bar(80, scale, "zz")}</div>
-<p class="muted">Discord officiel : mesuré avec le même compte connecté (voir le README). Il embarque son propre Chromium et son propre Node.js ; ${LINUX ? "Plume se contente de WebKitGTK, un moteur web bien plus léger." : "Plume réutilise le moteur web déjà dans Windows."}</p>
+<p class="muted">Discord officiel : mesuré avec le même compte connecté (voir le README). Il embarque son propre Chromium et son propre Node.js ; ${LINUX ? "Plume embarque Chromium seul, sans Node.js ni le code de bureau de Discord." : "Plume réutilise le moteur web déjà dans Windows."}</p>
 <div class="note"><b>Pourquoi pas moins ?</b>
 <p>La « Page Discord » (${fmt(page)} ici) est le cœur du chiffre : c'est l'interface officielle de Discord, son code et ses données. Plume l'affiche telle quelle, sans la modifier, c'est ce qui garde Discord à jour et compatible avec les mods. Pour descendre nettement en dessous, il faudrait réécrire toute l'interface de Discord (et perdre les plugins).</p>
 <p>Ce qui marche quand même : la <b>veille</b> (Paramètres Plume → Performances), qui décharge Discord quand tu ne t'en sers pas, et moins de plugins gourmands (les enregistreurs de messages grossissent au fil des heures). Le chiffre monte aussi avec le nombre et la taille des serveurs ouverts.</p></div>`;
@@ -233,9 +236,12 @@ ${rows}
         // Discord remplace parfois le contenu de <body> ; la colonne des
         // serveurs apparaît après la connexion : on se remet en place.
         setInterval(() => {
-            if (!document.body.contains(el)) document.body.appendChild(el);
-            if (!document.body.contains(pop)) document.body.appendChild(pop);
-            place();
+            // Ne replacer (donc ne forcer un recalcul de layout) que si Discord
+            // a effectivement retiré le compteur du DOM ; sinon rien à faire.
+            let moved = false;
+            if (!document.body.contains(el)) { document.body.appendChild(el); moved = true; }
+            if (!document.body.contains(pop)) { document.body.appendChild(pop); moved = true; }
+            if (moved) place();
         }, 2000);
         document.addEventListener("visibilitychange", tick);
     }

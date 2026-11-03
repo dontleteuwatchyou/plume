@@ -5,7 +5,7 @@
 (() => {
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
-    // Sous Linux (WebKitGTK), les réglages propres à WebView2 n'ont pas d'effet : on les cache.
+    // Sous Linux (Chromium embarqué), les réglages propres à WebView2 n'ont pas d'effet : on les cache.
     const LINUX = !window.chrome?.webview;
 
     const PRESETS = {
@@ -206,10 +206,10 @@ ${toggle("autoUpdate", "Vérifier au démarrage", "Plume cherche une nouvelle ve
 
         perf: () => `
 <h2>Performances</h2>
-${LINUX ? "" : `<h4>Économie de mémoire</h4>
+<h4>Économie de mémoire</h4>
 <p class="muted">Plume redémarre pour appliquer le changement.</p>
 ${MEMORY.map(([v, t, d]) => `<label class="radio" data-mem="${v}"><input type="radio" name="mem" value="${v}"><div><div class="t" style="font-weight:600">${t}</div><div class="muted">${d}</div></div></label>`).join("")}
-<h4>Arrière-plan</h4>
+${LINUX ? "" : `<h4>Arrière-plan</h4>
 ${toggle("trimInBackground", "Libérer la mémoire en arrière-plan", "Quand Plume n'est plus au premier plan (en jeu, par exemple), il rend la mémoire qu'il peut après 20 secondes.", "")}`}
 <h4>Démarrage</h4>
 ${toggle("autostart", LINUX ? "Lancer Plume à l'ouverture de session" : "Lancer Plume au démarrage de Windows", "Plume s'ouvre tout seul quand tu allumes ton PC, caché dans la zone de notification.", "")}

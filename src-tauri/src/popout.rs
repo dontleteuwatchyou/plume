@@ -20,7 +20,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use tauri::webview::NewWindowFeatures;
 use tauri::window::Color;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl};
+use crate::rt::{AppHandle, WebviewWindow, WebviewWindowBuilder};
 
 /// Début des étiquettes des lecteurs réduits : sert aussi à les reconnaître.
 const PREFIX: &str = "popout-";

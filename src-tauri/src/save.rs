@@ -8,7 +8,8 @@
 
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, Url};
+use tauri::{Manager, Url};
+use crate::rt::AppHandle;
 
 fn allowed(url: &Url) -> bool {
     let host = url.host_str().unwrap_or("");

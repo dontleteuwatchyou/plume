@@ -9,7 +9,7 @@
 //! copie que l'image finale.
 
 use serde::Serialize;
-use tauri::WebviewWindow;
+use crate::rt::WebviewWindow;
 
 /// Plus grande image transmise (et taille d'un emplacement de la mémoire partagée).
 const MAX_W: u32 = 2560;
@@ -100,7 +100,7 @@ mod win {
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
-    use tauri::WebviewWindow;
+    use crate::rt::WebviewWindow;
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     use windows::core::{factory, Interface, BOOL, HSTRING};
     use windows::Foundation::TypedEventHandler;

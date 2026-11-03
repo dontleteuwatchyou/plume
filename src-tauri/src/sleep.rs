@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::Manager;
+use crate::rt::{AppHandle, WebviewWindow};
 
 #[derive(Default)]
 pub struct Sleep {

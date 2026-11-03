@@ -133,6 +133,7 @@
         // lui laisse le déplacement, on aligne la hauteur des boutons sur elle
         // et on lui réserve leur place à droite.
         let bar = null;
+        let barH = "";
         setInterval(() => {
             if (!document.body.contains(btns)) document.body.appendChild(btns);
             if (!document.body.contains(drag)) document.body.prepend(drag);
@@ -144,8 +145,14 @@
                 }) || null;
                 if (bar) bar.style.paddingInlineEnd = `${btns.offsetWidth + 12}px`;
             }
-            drag.hidden = !!bar;
-            document.documentElement.style.setProperty("--plume-bar-h", bar ? `${bar.getBoundingClientRect().height}px` : "32px");
+            // N'écrire que ce qui change : une variable posée sur la racine
+            // fait recalculer le style de toute la page, deux fois par seconde.
+            if (drag.hidden !== !!bar) drag.hidden = !!bar;
+            const h = bar ? `${bar.getBoundingClientRect().height}px` : "32px";
+            if (h !== barH) {
+                barH = h;
+                document.documentElement.style.setProperty("--plume-bar-h", h);
+            }
         }, 500);
     }
 

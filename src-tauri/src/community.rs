@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use crate::rt::AppHandle;
 
 /// Adresse du Worker une fois déployé (voir community/README.md).
 /// Vide : la section Communauté indique qu'il n'est pas encore configuré.

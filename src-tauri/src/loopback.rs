@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::WebviewWindow;
+use crate::rt::WebviewWindow;
 use windows::core::{implement, Interface, Ref, HRESULT, HSTRING};
 use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::*;

@@ -5,7 +5,8 @@
 use std::path::{Path, PathBuf};
 
 use tauri::ipc::{InvokeBody, Request};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]

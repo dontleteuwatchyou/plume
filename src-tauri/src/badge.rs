@@ -10,7 +10,7 @@
 //! trouve déjà.
 
 use tauri::image::Image;
-use tauri::WebviewWindow;
+use crate::rt::WebviewWindow;
 
 const SIZE: usize = 32;
 

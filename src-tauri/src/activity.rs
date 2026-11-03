@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 const DETECTABLE: &str = "https://discord.com/api/v9/applications/detectable";
 const MAX_AGE: Duration = Duration::from_secs(24 * 3600);

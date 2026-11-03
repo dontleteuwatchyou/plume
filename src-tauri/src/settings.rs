@@ -6,15 +6,16 @@
 use std::sync::Mutex;
 
 use tauri::menu::CheckMenuItem;
-use tauri::{AppHandle, Manager, Wry};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 use crate::config::{Audio, Config};
 use crate::mods::{self, ClientMod};
 
 /// Cases à cocher du menu de la zone de notification, gardées en phase.
 pub struct TrayItems {
-    pub stereo: CheckMenuItem<Wry>,
-    pub mods: Vec<(ClientMod, CheckMenuItem<Wry>)>,
+    pub stereo: CheckMenuItem<crate::rt::Runtime>,
+    pub mods: Vec<(ClientMod, CheckMenuItem<crate::rt::Runtime>)>,
 }
 
 pub fn current(app: &AppHandle) -> Config {

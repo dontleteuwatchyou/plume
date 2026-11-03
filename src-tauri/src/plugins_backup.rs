@@ -11,7 +11,8 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 const KEEP: usize = 10;
 

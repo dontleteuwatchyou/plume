@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use tauri::AppHandle;
+use crate::rt::AppHandle;
 
 #[derive(Serialize, Default, Clone, Copy)]
 pub struct Mem {
@@ -143,17 +143,13 @@ fn measure(kinds: &HashMap<u32, &'static str>) -> Ram {
 #[cfg(not(windows))]
 fn measure(_: &HashMap<u32, &'static str>) -> Ram {
     let mut ram = Ram::default();
-    let (mut children, mut names) = (HashMap::<u32, Vec<u32>>::new(), HashMap::<u32, String>::new());
+    let mut children = HashMap::<u32, Vec<u32>>::new();
     for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
         let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
-        // `status` plutôt que `stat` : le nom y est entier et sans parenthèses
-        // à démêler.
         let Ok(status) = std::fs::read_to_string(entry.path().join("status")) else { continue };
         let mut parent = None;
         for line in status.lines() {
-            if let Some(v) = line.strip_prefix("Name:") {
-                names.insert(pid, v.trim().to_string());
-            } else if let Some(v) = line.strip_prefix("PPid:") {
+            if let Some(v) = line.strip_prefix("PPid:") {
                 parent = v.trim().parse::<u32>().ok();
             }
         }
@@ -173,7 +169,7 @@ fn measure(_: &HashMap<u32, &'static str>) -> Ram {
             todo.extend(c);
         }
         let Some(m) = rollup(pid) else { continue };
-        let kind = if pid == me { "plume" } else { role(names.get(&pid).map_or("", String::as_str)) };
+        let kind = if pid == me { "plume" } else { role(pid) };
         ram.total.add(&m);
         ram.parts.entry(kind).or_default().add(&m);
     }
@@ -195,16 +191,19 @@ fn rollup(pid: u32) -> Option<Mem> {
     Some(Mem { private: dirty + field("Swap:"), private_working: clean + dirty, working: field("Rss:"), processes: 1 })
 }
 
-/// WebKitGTK lance un processus par rôle et le nomme en conséquence. Le nom
-/// lu dans `/proc` est tronqué à quinze caractères, d'où les préfixes.
+/// Chromium (CEF) relance Plume lui-même pour chaque rôle : c'est la ligne de
+/// commande qui le dit. Les processus de rendu naissent du « zygote » et en
+/// gardent la ligne de commande ; les zygotes eux-mêmes pèsent quelques Mo.
 #[cfg(not(windows))]
-fn role(name: &str) -> &'static str {
-    if name.starts_with("WebKitWebProc") {
-        "renderer"
-    } else if name.starts_with("WebKitGPUProc") {
+fn role(pid: u32) -> &'static str {
+    let cmd = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+    let cmd = String::from_utf8_lossy(&cmd);
+    if cmd.contains("--type=gpu-process") {
         "gpu"
-    } else if name.starts_with("WebKitNetwork") {
+    } else if cmd.contains("--type=utility") {
         "utility"
+    } else if cmd.contains("--type=zygote") || cmd.contains("--type=renderer") {
+        "renderer"
     } else {
         "other"
     }

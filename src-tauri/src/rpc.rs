@@ -11,7 +11,8 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 const HANDSHAKE: u32 = 0;
 const FRAME: u32 = 1;

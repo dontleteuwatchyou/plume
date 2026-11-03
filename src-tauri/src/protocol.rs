@@ -3,7 +3,8 @@
 //! protocole sans droits admin : dans le registre de l'utilisateur (HKCU) sous
 //! Windows, comme gestionnaire `x-scheme-handler/discord` ailleurs.
 
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 /// `discord://-/channels/1/2` → `/channels/1/2`.
 fn path_of(link: &str) -> Option<String> {

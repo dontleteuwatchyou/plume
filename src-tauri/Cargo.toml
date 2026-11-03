@@ -1,6 +1,6 @@
 [package]
 name = "plume"
-version = "0.4.0"
+version = "0.5.0"
 description = "Discord, en léger : discord.com/app dans Tauri, avec Nightcord et la stéréo micro"
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -9,7 +9,8 @@ license = "GPL-3.0-or-later"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# Sans wry par défaut : sous Linux le moteur est CEF (src/rt.rs).
+tauri = { version = "2.12", default-features = false, features = ["tray-icon", "compression", "dynamic-acl", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-notification = "2"
@@ -22,9 +23,17 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 tauri-plugin-updater = "2"
 
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri = { version = "2.12", features = ["wry", "common-controls-v6"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Chromium embarqué (src/rt.rs). Fourche de Dorion du runtime CEF de Tauri,
+# figée sur un commit : l'officiel n'est pas encore publié.
+tauri-runtime-cef = { git = "https://github.com/SpikeHD/tauri-runtime-cef.git", rev = "3be79e3" }
+# Même version que tauri-runtime-cef (son glisser-déposer).
+winit = "=0.31.0-beta.2"
+
 [target.'cfg(not(windows))'.dependencies]
-# Le mod est posé à la main sur WebKitGTK, qui ne charge pas d'extension (native.rs).
-webkit2gtk = { version = "2.0", features = ["v2_38"] }
 # Disposition du clavier pour le push-to-talk (ptt.rs), mêmes versions que Tauri.
 gtk = "0.18"
 libc = "0.2"

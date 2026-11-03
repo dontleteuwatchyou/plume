@@ -1,50 +1,107 @@
-//! Les fichiers du mod, servis en boucle locale (hors Windows).
+//! Le mod, servi à la page par le schéma `plumemod://` (Linux).
 //!
-//! Sous Windows le mod est une vraie extension : le moteur sert lui-même ses
-//! fichiers sous `chrome-extension://…`. WebKitGTK ne sait pas charger
-//! d'extension, et un schéma d'URL maison serait refusé par la politique de
-//! sécurité de Discord. En revanche cette politique autorise explicitement
-//! `http://127.0.0.1:*` (Discord s'en sert pour ses propres passerelles) : un
-//! petit serveur local redonne donc au mod exactement ce qu'il attend, sans
-//! rien contourner.
+//! Sous Windows le mod est une vraie extension : WebView2 la charge et sert
+//! lui-même ses fichiers. Chromium embarqué (CEF) ne charge pas d'extension :
+//! un script d'amorçage, posé sur chaque page avant le code de Discord, lit le
+//! mod ici (requête synchrone, donc avant que Discord ne démarre) et
+//! l'exécute, comme le ferait l'extension ; la feuille de style et l'éditeur
+//! QuickCSS sont lus au même endroit.
 //!
-//! Il n'écoute que sur la boucle locale, ne répond qu'à GET, et seulement sous
-//! un chemin tiré au hasard à chaque lancement : une autre page ouverte sur la
-//! machine ne peut pas deviner l'adresse.
+//! Adresses : `plumemod://localhost/<fenêtre>/__mod.js` (le script composé)
+//! et `plumemod://localhost/<fenêtre>/<chemin>` (un fichier du mod). Rien ne
+//! sort du dossier du mod.
 
-#![cfg(not(windows))]
+#![cfg(target_os = "linux")]
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
-/// Lance le serveur pour `folder` et rend son adresse de base (avec le `/`
-/// final), ou `None` si le port local n'a pas pu être ouvert.
-pub fn serve(folder: PathBuf) -> Option<String> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).ok()?;
-    let port = listener.local_addr().ok()?.port();
-    let token = token();
-    let base = format!("http://127.0.0.1:{port}/{token}/");
-    let prefix = format!("/{token}/");
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let (folder, prefix) = (folder.clone(), prefix.clone());
-            // Un fil par requête : le mod en fait une poignée, et le fil
-            // principal ne doit jamais attendre.
-            std::thread::spawn(move || answer(stream, &folder, &prefix));
-        }
-    });
-    Some(base)
+use tauri::http::{Request, Response};
+
+struct Installed {
+    folder: PathBuf,
+    script: Arc<Vec<u8>>,
 }
 
-/// 32 caractères hexadécimaux tirés de l'heure et de l'adresse d'une
-/// allocation : pas un secret cryptographique, juste de quoi rendre l'adresse
-/// impossible à deviner depuis une autre page.
-fn token() -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    let boxed = Box::new(0u8);
-    let mix = now.as_nanos() as u64 ^ ((&*boxed as *const u8 as u64).rotate_left(17));
-    format!("{:016x}{:016x}", mix, now.as_nanos() as u64)
+static MODS: Mutex<Option<HashMap<String, Installed>>> = Mutex::new(None);
+
+fn base(label: &str) -> String {
+    format!("{}://localhost/{label}/", crate::rt::cef::MOD_SCHEME)
+}
+
+/// Le script d'amorçage d'une fenêtre (initialisation de page). Cadre du
+/// haut et pages de Discord seulement, comme le `matches` du manifeste.
+pub fn loader(label: &str) -> String {
+    let url = serde_json::to_string(&format!("{}__mod.js", base(label))).unwrap();
+    format!(
+        r#"(() => {{
+    if (window.top !== window || !/(^|\.)discord\.com$/.test(location.hostname)) return;
+    try {{
+        const x = new XMLHttpRequest();
+        x.open("GET", {url}, false);
+        x.send();
+        if (x.status === 200 && x.responseText) (0, eval)(x.responseText);
+    }} catch (e) {{ console.error("[plume] mod", e); }}
+}})();"#
+    )
+}
+
+/// Pose (ou retire, avec `None`) le mod d'une fenêtre. Pris en compte au
+/// prochain chargement de page.
+pub fn install(label: &str, folder: Option<PathBuf>) {
+    let mut guard = MODS.lock().unwrap();
+    let mods = guard.get_or_insert_with(HashMap::new);
+    mods.remove(label);
+    let Some(folder) = folder else { return };
+    let Some(bundle) = crate::mods::bundle(&folder) else {
+        eprintln!("[plume] mod : bundle introuvable dans {}", folder.display());
+        return;
+    };
+    let source = match std::fs::read_to_string(folder.join(&bundle.script)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[plume] mod : {e}");
+            return;
+        }
+    };
+    let base = base(label);
+    let json = |v: &str| serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into());
+    // Ce que `content.js` fait dans l'extension, puis le mod lui-même.
+    let script = format!(
+        "(() => {{ const meta = {{ EXTENSION_VERSION: {}, EXTENSION_BASE_URL: {}, RENDERER_CSS_URL: {} }};\n\
+         addEventListener('DOMContentLoaded', () => window.postMessage({{ type: 'vencord:meta', meta }}, '*'), {{ once: true }}); }})();\n{source}\n//# sourceURL=plumemod.js",
+        json(&bundle.version),
+        json(&base),
+        json(&format!("{base}{}", bundle.css)),
+    );
+    mods.insert(label.to_string(), Installed { folder, script: Arc::new(script.into_bytes()) });
+}
+
+/// Répond à une requête `plumemod://`.
+pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let path = request.uri().path().trim_start_matches('/');
+    let (label, rel) = path.split_once('/').unwrap_or((path, ""));
+    let found = {
+        let guard = MODS.lock().unwrap();
+        guard.as_ref().and_then(|m| m.get(label)).and_then(|m| {
+            if rel == "__mod.js" {
+                Some(("text/javascript; charset=utf-8", m.script.as_ref().clone()))
+            } else {
+                let p = resolve(&m.folder, rel)?;
+                std::fs::read(&p).ok().map(|b| (mime(&p), b))
+            }
+        })
+    };
+    let builder = Response::builder()
+        // Lu depuis la page de Discord, donc depuis une autre origine.
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Cache-Control", "no-store");
+    match found {
+        Some((ty, body)) => builder.status(200).header("Content-Type", ty).body(body),
+        None => builder.status(404).body(Vec::new()),
+    }
+    .unwrap_or_else(|_| Response::new(Vec::new()))
 }
 
 fn mime(path: &Path) -> &'static str {
@@ -102,39 +159,6 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn answer(mut stream: TcpStream, folder: &Path, prefix: &str) {
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-    let mut line = String::new();
-    if BufReader::new(&stream).read_line(&mut line).is_err() {
-        return;
-    }
-    let mut parts = line.split_whitespace();
-    let (method, target) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
-    let body = match method {
-        "GET" | "HEAD" => target.strip_prefix(prefix).and_then(|rel| resolve(folder, rel)).and_then(|p| std::fs::read(&p).ok().map(|b| (p, b))),
-        _ => None,
-    };
-    let Some((path, bytes)) = body else {
-        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-        return;
-    };
-    // Le mod lit ces fichiers depuis la page de Discord, donc depuis une autre
-    // origine : sans cet en-tête, le moteur refuse la réponse.
-    let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        mime(&path),
-        bytes.len()
-    );
-    let _ = stream.write_all(head.as_bytes());
-    if method == "GET" {
-        let _ = stream.write_all(&bytes);
-    }
-    let _ = stream.flush();
-    // Vide ce que le client a pu envoyer après l'en-tête, sinon il voit une
-    // connexion coupée au lieu de la réponse.
-    let _ = stream.read(&mut [0u8; 1]);
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -145,11 +169,5 @@ mod tests {
         assert!(super::resolve(root, "../../etc/passwd").is_none());
         assert!(super::resolve(root, "..%2f..%2fetc").is_none());
         assert!(super::resolve(root, "Cargo.toml").is_some());
-    }
-
-    #[test]
-    fn jeton_different_a_chaque_fois() {
-        assert_ne!(super::token(), super::token());
-        assert_eq!(super::token().len(), 32);
     }
 }

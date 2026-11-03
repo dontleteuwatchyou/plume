@@ -15,7 +15,8 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 /// La combinaison PTT : chaque touche est une liste d'équivalents (Maj gauche
 /// ou droite…), dans les codes du système. Vide = PTT inactif.

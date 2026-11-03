@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
+use crate::rt::AppHandle;
 
 /// Nightcord Web+ (github.com/dontleteuwatchyou/nightcord-web-plus) : la version
 /// web recompilée chaque jour avec les plugins que l'officielle retire et les

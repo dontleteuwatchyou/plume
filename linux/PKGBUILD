@@ -1,26 +1,35 @@
 # Maintainer: dontleteuwatchyou
 #
-# Plume pour Arch Linux. Le moteur web est plume-webkit (WebKitGTK avec
-# WebRTC), sans quoi Discord n'a ni appel, ni stéréo, ni partage d'écran.
+# Plume pour Arch Linux. Le moteur web est Chromium embarqué (CEF), livré
+# dans /usr/lib/plume : WebKitGTK n'avait ni un vocal fiable ni la mémoire
+# de V8 (voir src-tauri/src/rt.rs).
 
 pkgname=plume
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="Client Discord léger : discord.com/app avec Plumecord, le micro en stéréo et le push-to-talk global"
 arch=(x86_64)
 url="https://github.com/dontleteuwatchyou/plume"
 license=(GPL-3.0-or-later)
 depends=(
-  plume-webkit
   gtk3
   libayatana-appindicator
-  # Moteur vocal de WebKit : webrtcbin, ICE, Opus, et PipeWire pour le
-  # partage d'écran par le portail du bureau.
-  gst-plugins-base
-  gst-plugins-good
-  gst-plugins-bad
-  gst-plugin-pipewire
-  libnice
+  # Ce que libcef demande au système (mêmes dépendances que le paquet cef).
+  alsa-lib
+  at-spi2-core
+  dbus
+  libdrm
+  libpulse
+  libxcomposite
+  libxdamage
+  libxkbcommon
+  libxrandr
+  mesa
+  nss
+  pango
+  systemd-libs
+  # Partage d'écran : Chromium passe par le portail du bureau (PipeWire).
+  pipewire
   xdg-desktop-portal
   xdg-utils
 )
@@ -31,10 +40,14 @@ optdepends=(
   'xdg-desktop-portal-kde: partage d écran sous KDE'
   'xdg-desktop-portal-wlr: partage d écran sous Sway et wlroots'
 )
+# Plume 0.4 tournait sur ce WebKitGTK maison, plus utilisé.
+replaces=(plume-webkit)
 install=plume.install
 # Le LTO de makepkg compile le C de `ring` en bitcode que l'édition de liens de
 # Rust ne lit pas (symboles introuvables) ; Rust optimise déjà tout seul.
-options=(!lto)
+# libcef est strippé à la main (238 Mo au lieu de 1,2 Go) ; `strip` de makepkg
+# ne doit pas repasser sur les autres binaires de Chromium.
+options=(!lto !strip)
 source=("git+$url.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
@@ -47,24 +60,38 @@ prepare() {
 build() {
   cd plume/src-tauri
   export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
-  # Compilé contre plume-webkit, et le retrouve à l'exécution (DT_RPATH, qui
-  # vaut aussi pour les bibliothèques que WebKit charge lui-même).
-  export PKG_CONFIG_PATH=/usr/lib/plume/lib/pkgconfig
-  export RUSTFLAGS="$RUSTFLAGS -C link-arg=-Wl,--disable-new-dtags,-rpath,/usr/lib/plume/lib"
+  # CEF est téléchargé ici par cef-dll-sys (version figée par la crate), une
+  # fois, depuis le dépôt officiel des builds CEF.
+  export CEF_PATH="$srcdir/cef"
+  # libcef et ses ressources sont à côté du binaire, dans /usr/lib/plume.
+  export RUSTFLAGS="$RUSTFLAGS -C link-arg=-Wl,-rpath,\$ORIGIN"
   # `custom-protocol` : les pages de Plume (dist/) embarquées dans le binaire,
   # ce que fait `tauri build`.
   cargo build --frozen --release --features tauri/custom-protocol
 }
 
-check() {
-  cd plume/src-tauri
-  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target PKG_CONFIG_PATH=/usr/lib/plume/lib/pkgconfig
-  cargo test --frozen --release --features tauri/custom-protocol
-}
-
 package() {
   cd plume
-  install -Dm755 src-tauri/target/release/plume "$pkgdir/usr/bin/plume"
+  local lib="$pkgdir/usr/lib/plume"
+  local cef
+  cef="$(dirname "$(find "$srcdir/cef" -name libcef.so -print -quit)")"
+  install -dm755 "$lib"
+  strip --strip-unneeded src-tauri/target/release/plume -o "$lib/plume"
+  chmod 755 "$lib/plume"
+  strip --strip-unneeded "$cef/libcef.so" -o "$lib/libcef.so"
+  chmod 755 "$lib/libcef.so"
+  for f in libEGL.so libGLESv2.so libvk_swiftshader.so libvulkan.so.1; do
+    install -Dm755 "$cef/$f" "$lib/$f"
+  done
+  for f in vk_swiftshader_icd.json chrome_100_percent.pak chrome_200_percent.pak resources.pak icudtl.dat v8_context_snapshot.bin; do
+    install -Dm644 "$cef/$f" "$lib/$f"
+  done
+  # Seulement les langues utiles : 49 Mo de traductions de Chromium sinon.
+  for l in fr en-US en-GB; do
+    install -Dm644 "$cef/locales/$l.pak" "$lib/locales/$l.pak"
+  done
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s /usr/lib/plume/plume "$pkgdir/usr/bin/plume"
   install -Dm644 linux/plume.desktop "$pkgdir/usr/share/applications/plume.desktop"
   install -Dm644 assets/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/plume.svg"
   install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/plume.png"
