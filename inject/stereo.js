@@ -17,6 +17,8 @@
     if (!/(^|\.)discord\.com$/.test(location.hostname)) return;
     const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
     const log = (...a) => console.log("%c[Plume audio]", "color:#8b7cf6;font-weight:bold", ...a);
+    // Chromium embarqué (Linux) n'a pas le H264 : WebView2 (Windows) l'a.
+    const LINUX = !window.chrome?.webview;
 
     let A = { ...(window.__PLUME__?.audio || {}) };
     // __PLUME__ date de la création de la fenêtre : on relit la version à jour.
@@ -73,6 +75,38 @@
             const end = section.endsWith("\n") ? "" : nl;
             return `${section}${end}a=ptime:${A.frameMs}${nl}a=maxptime:${A.frameMs}${nl}`;
         }).join("");
+    }
+
+    // ---- Vidéo (Linux) -----------------------------------------------------
+    // Le Chromium embarqué n'a pas le H264, mais le partage d'écran de Discord
+    // ne propose souvent que ça (encodeur NVENC du client officiel) : la page
+    // reste à charger à l'infini. On relabellise chaque ligne H264 en VP8 (même
+    // payload type) et on retire ses `a=fmtp:` : la négociation retombe alors
+    // sur VP8, que le moteur sait décoder. Appliqué seulement à nos descriptions
+    // locales (offre/réponse/setLocalDescription), jamais au distant — sinon on
+    // lirait des paquets H264 étiquetés VP8 (image cassée). Repris de Dorion.
+    // Depuis CEF 154 le moteur a le H264 (OpenH264) : la relabellisation
+    // devient nocive, elle ment au serveur et la vidéo n'arrive jamais. On ne
+    // la garde que pour un moteur qui n'a vraiment pas le codec.
+    const MOTEUR_A_H264 = (() => {
+        try {
+            return RTCRtpReceiver.getCapabilities("video").codecs.some(c => /H264/i.test(c.mimeType));
+        } catch {
+            return false;
+        }
+    })();
+
+    function rewriteVideoCodec(sdp) {
+        if (MOTEUR_A_H264) return sdp;
+        if (!LINUX || typeof sdp !== "string" || !sdp.includes("H264")) return sdp;
+        const nl = sdp.includes("\r\n") ? "\r\n" : "\n";
+        const lines = sdp.split(/\r?\n/);
+        const pts = lines.filter(l => /^a=rtpmap:\d+ H264\//i.test(l)).map(l => l.match(/^a=rtpmap:(\d+)/)[1]);
+        if (!pts.length) return sdp;
+        return lines
+            .filter(l => !(l.startsWith("a=fmtp:") && pts.some(p => l.startsWith(`a=fmtp:${p} `))))
+            .map(l => (/^a=rtpmap:\d+ H264\//i.test(l) ? l.replace(/H264\/90000/i, "VP8/90000") : l))
+            .join(nl);
     }
 
     // ---- 1. Micro ----------------------------------------------------------
@@ -246,15 +280,26 @@
         const orig = P[name];
         P[name] = async function (...args) {
             const desc = await orig.apply(this, args);
-            return desc?.sdp ? new RTCSessionDescription({ type: desc.type, sdp: mungeSdp(desc.sdp) }) : desc;
+            return desc?.sdp ? new RTCSessionDescription({ type: desc.type, sdp: rewriteVideoCodec(mungeSdp(desc.sdp)) }) : desc;
         };
     }
-    for (const name of ["setLocalDescription", "setRemoteDescription"]) {
-        const orig = P[name];
-        P[name] = function (desc, ...rest) {
+    {
+        // Notre description locale : audio (mungeSdp) + vidéo H264→VP8.
+        const orig = P.setLocalDescription;
+        P.setLocalDescription = function (desc, ...rest) {
+            peers.add(this);
+            if (desc?.sdp) desc = { type: desc.type, sdp: rewriteVideoCodec(mungeSdp(desc.sdp)) };
+            // Après chaque négociation, Discord a pu redéfinir l'émetteur.
+            return orig.call(this, desc, ...rest).then(r => (enforce(this), r));
+        };
+    }
+    {
+        // Description distante : seulement l'audio ; ne jamais réécrire la vidéo
+        // reçue (on lirait des paquets H264 étiquetés VP8).
+        const orig = P.setRemoteDescription;
+        P.setRemoteDescription = function (desc, ...rest) {
             peers.add(this);
             if (desc?.sdp) desc = { type: desc.type, sdp: mungeSdp(desc.sdp) };
-            // Après chaque négociation, Discord a pu redéfinir l'émetteur.
             return orig.call(this, desc, ...rest).then(r => (enforce(this), r));
         };
     }

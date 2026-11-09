@@ -28,8 +28,11 @@ tauri = { version = "2.12", features = ["wry", "common-controls-v6"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Chromium embarqué (src/rt.rs). Fourche de Dorion du runtime CEF de Tauri,
-# figée sur un commit : l'officiel n'est pas encore publié.
-tauri-runtime-cef = { git = "https://github.com/SpikeHD/tauri-runtime-cef.git", rev = "3be79e3" }
+# figée sur un commit : l'officiel n'est pas encore publié. Notre fourche à nous
+# monte CEF de 146 à 154 : le CEF officiel est compilé sans OpenH264, donc sans
+# H.264 dans WebRTC, et les streams Discord (H.264) n'arrivent jamais. Le paquet
+# Arch `cef` compile avec `rtc_use_h264`, et seule la série 154 l'a.
+tauri-runtime-cef = { git = "https://github.com/dontleteuwatchyou/tauri-runtime-cef.git", rev = "fc261c6" }
 # Même version que tauri-runtime-cef (son glisser-déposer).
 winit = "=0.31.0-beta.2"
 

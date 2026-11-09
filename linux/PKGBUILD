@@ -5,7 +5,7 @@
 # de V8 (voir src-tauri/src/rt.rs).
 
 pkgname=plume
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="Client Discord léger : discord.com/app avec Plumecord, le micro en stéréo et le push-to-talk global"
 arch=(x86_64)
@@ -13,6 +13,11 @@ url="https://github.com/dontleteuwatchyou/plume"
 license=(GPL-3.0-or-later)
 depends=(
   gtk3
+  # Le CEF du dépôt, compilé avec `rtc_use_h264` (OpenH264) : sans lui, pas de
+  # H.264 dans WebRTC et les streams Discord n'affichent jamais rien. Le CEF
+  # officiel livré par cef-dll-sys ne l'a pas. Version exacte : la crate
+  # cef-dll-sys est épinglée sur cette série.
+  'cef=154.0.34'
   libayatana-appindicator
   # Ce que libcef demande au système (mêmes dépendances que le paquet cef).
   alsa-lib
@@ -55,13 +60,29 @@ prepare() {
   cd plume/src-tauri
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+
+  # cef-dll-sys veut une distribution CEF à lui ; sans elle il retélécharge le
+  # CEF officiel, qui n'a pas OpenH264. On lui en fabrique une à partir du
+  # paquet `cef`, avec l'`archive.json` qu'il vérifie au démarrage.
+  local dist="$srcdir/cef"
+  rm -rf "$dist"; install -dm755 "$dist"
+  local f
+  for f in /usr/lib/cef/*; do ln -sfn "$f" "$dist/$(basename "$f")"; done
+  ln -sfn /usr/include/cef/include "$dist/include"
+  ln -sfn /usr/src/cef/libcef_dll "$dist/libcef_dll"
+  cat > "$dist/archive.json" <<JSON
+{
+  "type": "minimal",
+  "name": "cef_binary_154.0.34+gsystem+chromium-154.0.8037.154_linux64_minimal.tar.bz2",
+  "sha1": "0000000000000000000000000000000000000000"
+}
+JSON
 }
 
 build() {
   cd plume/src-tauri
   export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
-  # CEF est téléchargé ici par cef-dll-sys (version figée par la crate), une
-  # fois, depuis le dépôt officiel des builds CEF.
+  # La distribution assemblée par prepare() à partir du paquet `cef`.
   export CEF_PATH="$srcdir/cef"
   # libcef et ses ressources sont à côté du binaire, dans /usr/lib/plume.
   export RUSTFLAGS="$RUSTFLAGS -C link-arg=-Wl,-rpath,\$ORIGIN"
@@ -73,22 +94,22 @@ build() {
 package() {
   cd plume
   local lib="$pkgdir/usr/lib/plume"
-  local cef
-  cef="$(dirname "$(find "$srcdir/cef" -name libcef.so -print -quit)")"
   install -dm755 "$lib"
   strip --strip-unneeded src-tauri/target/release/plume -o "$lib/plume"
   chmod 755 "$lib/plume"
-  strip --strip-unneeded "$cef/libcef.so" -o "$lib/libcef.so"
-  chmod 755 "$lib/libcef.so"
-  for f in libEGL.so libGLESv2.so libvk_swiftshader.so libvulkan.so.1; do
-    install -Dm755 "$cef/$f" "$lib/$f"
-  done
-  for f in vk_swiftshader_icd.json chrome_100_percent.pak chrome_200_percent.pak resources.pak icudtl.dat v8_context_snapshot.bin; do
-    install -Dm644 "$cef/$f" "$lib/$f"
+  # libcef et ses ressources viennent du paquet `cef` : des liens plutôt que
+  # 273 Mo recopiés. Le binaire est lié en `rpath=$ORIGIN`, le lien suffit, et
+  # CEF cherche ses ressources à côté de lui.
+  local f
+  for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json \
+           chrome_100_percent.pak chrome_200_percent.pak resources.pak \
+           icudtl.dat v8_context_snapshot.bin; do
+    [ -e "/usr/lib/cef/$f" ] && ln -s "/usr/lib/cef/$f" "$lib/$f"
   done
   # Seulement les langues utiles : 49 Mo de traductions de Chromium sinon.
-  for l in fr en-US en-GB; do
-    install -Dm644 "$cef/locales/$l.pak" "$lib/locales/$l.pak"
+  install -dm755 "$lib/locales"
+  for f in fr en-US en-GB; do
+    [ -e "/usr/lib/cef/locales/$f.pak" ] && ln -s "/usr/lib/cef/locales/$f.pak" "$lib/locales/$f.pak"
   done
   install -dm755 "$pkgdir/usr/bin"
   ln -s /usr/lib/plume/plume "$pkgdir/usr/bin/plume"
