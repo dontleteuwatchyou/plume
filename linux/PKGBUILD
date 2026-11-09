@@ -5,7 +5,7 @@
 # de V8 (voir src-tauri/src/rt.rs).
 
 pkgname=plume
-pkgver=0.5.1
+pkgver=0.5.2
 pkgrel=1
 pkgdesc="Client Discord léger : discord.com/app avec Plumecord, le micro en stéréo et le push-to-talk global"
 arch=(x86_64)
