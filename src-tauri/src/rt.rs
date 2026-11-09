@@ -82,7 +82,7 @@ pub mod cef {
         path.and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
             .and_then(|v| serde_json::from_value(v.get("memory")?.clone()).ok())
-            .unwrap_or(MemoryMode::Reduced)
+            .unwrap_or(MemoryMode::Standard)
     }
 
     /// Les mêmes réglages que WebView2 sous Windows (config.rs), en
@@ -111,6 +111,16 @@ pub mod cef {
         }
         // Jamais `--lite-mode` ni `--jitless` : ils coupent WebAssembly, dont
         // le chiffrement vocal de Discord (DAVE) a besoin.
+        // Ces mêmes options coûtent cher sur les streams. Mesuré le 2026-11-09
+        // sur un vrai stream : 25-30 s avant la première image en Réduite
+        // contre 10 s en Standard, avec des dizaines d'images jetées faute de
+        // clé prête (« Decrypt failed, no valid cryptor found, type: video »)
+        // et un récepteur vidéo qui abandonne (« video-stream-receiver-ready-
+        // timeout »), contre zéro en Standard. Le mécanisme exact n'est PAS
+        // établi : un benchmark JS et WebAssembly synthétique ne montre aucun
+        // écart entre les deux modes, et il n'y a qu'une ouverture de stream
+        // mesurée de chaque côté. D'où Standard par défaut par prudence : le
+        // gain de ~120 Mo n'est pas gratuit, reste à savoir ce qu'il coûte.
         let v8 = ("js-flags".to_string(), Some("--optimize-for-size --max-semi-space-size=2".to_string()));
         match mode {
             MemoryMode::Standard => {}

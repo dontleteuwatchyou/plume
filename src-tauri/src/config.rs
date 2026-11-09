@@ -212,7 +212,7 @@ impl Default for Config {
             client_mod: ClientMod::Plumecord,
             audio: Audio::default(),
             theme: "plume".into(),
-            memory: MemoryMode::Reduced,
+            memory: MemoryMode::Standard,
             trim_in_background: true,
             auto_update: true,
             autostart: false,
